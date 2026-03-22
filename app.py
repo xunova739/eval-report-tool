@@ -9,6 +9,7 @@ import difflib
 import hashlib
 import time
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import io
 from typing import Optional, Tuple, List, Dict, Any
@@ -218,9 +219,8 @@ st.markdown("""
         color: var(--error) !important;
         background: rgba(239, 68, 68, 0.05) !important;
     }
-    /* 通过定位特定宽度比例的列末尾来精准打击删除按钮（仅限指标编辑区域） */
-    /* 使用 .metrics-editor 类限定范围，避免影响报告区域 */
-    .metrics-editor div[data-testid="column"]:nth-child(4):last-child .stButton button {
+    /* 通过定位特定宽度比例的列末尾来精准打击删除按钮（条件编辑器与分组维度） */
+    div[data-testid="column"]:nth-child(4):last-child .stButton button {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
@@ -236,7 +236,7 @@ st.markdown("""
         transition: all 0.2s ease !important;
         margin-top: 0px !important;
     }
-    .metrics-editor div[data-testid="column"]:nth-child(4):last-child .stButton button:hover {
+    div[data-testid="column"]:nth-child(4):last-child .stButton button:hover {
         color: var(--error) !important;
         background: rgba(239, 68, 68, 0.08) !important;
         border-radius: 8px !important;
@@ -786,33 +786,74 @@ def clear_generated_report():
     st.session_state.pop("report_word_cache_bytes", None)
 
 
-def render_copy_markdown_button(
-    text: str,
-    key: str,
-    label: str = "复制Markdown",
-    disabled: bool = False,
-    button_type: str = "secondary"
-):
-    """渲染复制按钮，点击后显示可复制的文本区域"""
-    import streamlit.components.v1 as components
+def render_copy_to_clipboard_button(text: str, key: str, label: str = "复制", disabled: bool = False):
+    """渲染一个匹配 Streamlit toggle 大小的复制按钮"""
+    import json
 
-    if st.button(
-        label,
-        key=key,
-        use_container_width=True,
-        disabled=disabled,
-        type=button_type
-    ):
-        # 使用 Session State 标记需要显示复制区域
-        st.session_state[f"{key}_show_copy"] = True
+    escaped_text = json.dumps(text, ensure_ascii=False)
 
-    # 如果点击了按钮，显示可复制的文本区域
-    if st.session_state.get(f"{key}_show_copy", False):
-        st.info("请使用下方文本框右上角的复制按钮：")
-        st.code(text or "", language="markdown")
-        if st.button("关闭", key=f"{key}_close"):
-            st.session_state[f"{key}_show_copy"] = False
-            st.rerun()
+    button_html = f'''
+    <style>
+        .copy-btn-container-{key} {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 26px;
+            padding: 0;
+        }}
+        .copy-btn-{key} {{
+            background-color: white;
+            color: {'#9CA3AF' if disabled else '#374151'};
+            border: 1px solid {'#E5E7EB' if disabled else '#D1D5DB'};
+            border-radius: 6px;
+            padding: 5px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: {'not-allowed' if disabled else 'pointer'};
+            transition: all 0.15s ease;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            white-space: nowrap;
+        }}
+        .copy-btn-{key}:hover {{
+            background-color: {'white' if disabled else '#F9FAFB'};
+            border-color: {'#E5E7EB' if disabled else '#9CA3AF'};
+        }}
+        .copy-success-{key} {{
+            color: #059669 !important;
+            border-color: #10B981 !important;
+            background-color: #F0FDF4 !important;
+        }}
+    </style>
+    <div class="copy-btn-container-{key}">
+        <button class="copy-btn-{key}" id="btn-{key}"
+                {'disabled' if disabled else ''}
+                onclick="copyToClipboard{key}()">
+            {label}
+        </button>
+    </div>
+    <script>
+        function copyToClipboard{key}() {{
+            const text = {escaped_text};
+            navigator.clipboard.writeText(text).then(function() {{
+                const btn = document.getElementById('btn-{key}');
+                btn.innerHTML = '✓';
+                btn.classList.add('copy-success-{key}');
+                setTimeout(function() {{
+                    btn.innerHTML = '{label}';
+                    btn.classList.remove('copy-success-{key}');
+                }}, 1500);
+            }}).catch(function(err) {{
+                alert('复制失败，请手动选择复制');
+            }});
+        }}
+    </script>
+    '''
+    components.html(button_html, height=40)
 
 
 def get_cached_report_word_bytes(report_text: str, stats_result: dict, is_comparison: bool):
@@ -3064,35 +3105,14 @@ if uploaded_file is not None:
                 key="task_background_input"
             )
 
-            toolbar_col1, toolbar_col2, toolbar_col3 = st.columns(3)
-
-            with toolbar_col1:
-                generate_report_clicked = st.button(
-                    "生成评测报告",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=(not api_configured),
-                    key="generate_report_btn"
-                )
-            with toolbar_col2:
-                has_report = bool(st.session_state.get("generated_report", "").strip())
-                if st.button(
-                    "完成编辑" if st.session_state.get("report_edit_mode") else "编辑Markdown",
-                    key="toggle_report_edit_btn",
-                    use_container_width=True,
-                    disabled=not has_report,
-                    type="secondary"
-                ):
-                    st.session_state["report_edit_mode"] = not st.session_state.get("report_edit_mode", False)
-                    st.rerun()
-            with toolbar_col3:
-                render_copy_markdown_button(
-                    st.session_state.get("generated_report", ""),
-                    key="copy_report_preview_btn",
-                    label="复制Markdown",
-                    disabled=not has_report,
-                    button_type="secondary"
-                )
+            # 生成报告按钮
+            generate_report_clicked = st.button(
+                "生成评测报告",
+                type="primary",
+                use_container_width=True,
+                disabled=(not api_configured),
+                key="generate_report_btn"
+            )
 
             if generate_report_clicked and api_configured:
                 with st.spinner("AI正在生成评测报告..."):
@@ -3122,25 +3142,69 @@ if uploaded_file is not None:
 
                         report = llm.call_text(prompt, temperature=0.7)
                         st.session_state["generated_report"] = report
+                        # 不刷新页面，直接继续渲染
 
                     except Exception as e:
                         st.error(format_api_error(e))
 
             # 报告编辑和导出
             if st.session_state.get("generated_report"):
-                st.markdown("**报告编辑（Markdown）**" if st.session_state.get("report_edit_mode") else "**报告预览**")
+                st.markdown("---")
+
+                # 标题行 + 编辑开关
+                title_col, edit_col = st.columns([6, 1])
+                with title_col:
+                    st.markdown("**报告内容**" + ("（可编辑）" if st.session_state.get("report_edit_mode") else "（预览）"))
+                with edit_col:
+                    is_edit_mode = st.toggle(
+                        "编辑",
+                        value=st.session_state.get("report_edit_mode", False),
+                        key="report_edit_toggle"
+                    )
+                    st.session_state["report_edit_mode"] = is_edit_mode
+
                 with st.container(border=True):
-                    if st.session_state.get("report_edit_mode"):
+                    if is_edit_mode:
                         edited_report = st.text_area(
                             "报告内容",
                             value=st.session_state["generated_report"],
                             height=400,
-                            key="report_editor_inline",
+                            key="report_editor_textarea",
                             label_visibility="collapsed"
                         )
                         st.session_state["generated_report"] = edited_report
                     else:
-                        st.markdown(st.session_state["generated_report"])
+                        # 报告预览 + 复制按钮
+                        report_text = st.session_state["generated_report"]
+                        import json as _json
+                        _escaped = _json.dumps(report_text, ensure_ascii=False)
+                        copy_btn_html = f'''
+<div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+  <button id="copy-btn" onclick="copyText()" style="background:white;color:#374151;border:1px solid #D1D5DB;border-radius:6px;padding:4px 14px;font-size:13px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif;">复制</button>
+</div>
+<script>
+function copyText() {{
+  var text = {_escaped};
+  navigator.clipboard.writeText(text).then(function() {{
+    var b = document.getElementById('copy-btn');
+    b.innerText = '✓ 已复制';
+    b.style.color = '#059669';
+    b.style.borderColor = '#10B981';
+    b.style.background = '#F0FDF4';
+    setTimeout(function() {{
+      b.innerText = '复制';
+      b.style.color = '';
+      b.style.borderColor = '';
+      b.style.background = '';
+    }}, 1500);
+  }}).catch(function(err) {{
+    alert('复制失败，请手动复制');
+  }});
+}}
+</script>
+'''
+                        components.html(copy_btn_html, height=36)
+                        st.markdown(report_text)
 
                 col1, col2 = st.columns(2)
 
@@ -3160,7 +3224,8 @@ if uploaded_file is not None:
                                 data=word_bytes,
                                 file_name=f"评测报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                use_container_width=True
+                                use_container_width=True,
+                                key="download_word_btn"
                             )
                     except Exception as e:
                         st.error(f"导出失败: {str(e)}")
