@@ -50,10 +50,10 @@ st.set_page_config(
 # ==================== 自定义CSS（极简现代风格） ====================
 # 字体：Inter - 来自 Google Fonts
 st.markdown("""
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+    /* 加载 Inter 字体 */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
     /* ==================== 设计系统变量 ==================== */
     :root {
         --primary: #0F172A;
