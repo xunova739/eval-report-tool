@@ -3180,30 +3180,36 @@ if uploaded_file is not None:
                         _escaped = _json.dumps(report_text, ensure_ascii=False)
                         copy_btn_html = f'''
 <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
-  <button id="copy-btn" onclick="copyText()" style="background:white;color:#374151;border:1px solid #D1D5DB;border-radius:6px;padding:4px 14px;font-size:13px;font-weight:500;cursor:pointer;font-family:Inter,sans-serif;">复制</button>
+  <button id="copy-btn" onmouseover="this.style.background='#374151'" onmouseout="this.style.background=this.innerText.includes('已复制')?'#10B981':'#1F2937'" onclick="copyText()" style="display:flex; align-items:center; justify-content:center; gap:6px; background:#1F2937; color:white; border:none; border-radius:6px; padding:6px 12px; font-size:13px; font-weight:500; cursor:pointer; font-family:Inter,sans-serif; transition:all 0.15s ease; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
+    <span>复制</span>
+  </button>
 </div>
 <script>
 function copyText() {{
   var text = {_escaped};
   navigator.clipboard.writeText(text).then(function() {{
     var b = document.getElementById('copy-btn');
-    b.innerText = '✓ 已复制';
-    b.style.color = '#059669';
-    b.style.borderColor = '#10B981';
-    b.style.background = '#F0FDF4';
+    var span = b.querySelector('span');
+    var svg = b.querySelector('svg');
+    span.innerText = '已复制';
+    b.style.background = '#10B981';
+    svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
     setTimeout(function() {{
-      b.innerText = '复制';
-      b.style.color = '';
-      b.style.borderColor = '';
-      b.style.background = '';
-    }}, 1500);
+      span.innerText = '复制';
+      b.style.background = '#1F2937';
+      svg.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>';
+    }}, 2000);
   }}).catch(function(err) {{
     alert('复制失败，请手动复制');
   }});
 }}
 </script>
 '''
-                        components.html(copy_btn_html, height=36)
+                        components.html(copy_btn_html, height=45)
                         st.markdown(report_text)
 
                 col1, col2 = st.columns(2)
