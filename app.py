@@ -606,6 +606,55 @@ def get_column_summary(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return summary
 
 
+def render_step_indicator():
+    """渲染步骤指示器"""
+    # 计算当前步骤
+    if st.session_state.get("df") is None:
+        current_step = 1
+    elif st.session_state.get("confirmed_metrics") is None:
+        current_step = 2
+    elif st.session_state.get("stats_result") is None:
+        current_step = 3
+    else:
+        current_step = 4
+
+    steps = [
+        ("1", "上传数据", "上传 Excel/CSV 文件"),
+        ("2", "配置口径", "定义统计指标"),
+        ("3", "执行统计", "计算统计数据"),
+        ("4", "导出报告", "生成 Word 报告")
+    ]
+
+    step_html = '<div class="steps-container">'
+
+    for i, (num, title, desc) in enumerate(steps):
+        if i < current_step - 1:
+            status = "completed"
+            icon = "✓"
+        elif i == current_step - 1:
+            status = "current"
+            icon = num
+        else:
+            status = "pending"
+            icon = num
+
+        step_html += f'''
+        <div class="step {status}">
+            <div class="step-number">{icon}</div>
+            <div>
+                <div class="step-text">{title}</div>
+            </div>
+        </div>'''
+
+        if i < len(steps) - 1:
+            line_status = "completed" if i < current_step - 1 else ""
+            step_html += f'<div class="step-line {line_status}"></div>'
+
+    step_html += '</div>'
+
+    st.markdown(step_html, unsafe_allow_html=True)
+
+
 def init_session_state():
     """初始化session_state"""
     if "df" not in st.session_state:
@@ -2143,7 +2192,9 @@ with st.sidebar:
 
 # ==================== 主界面 ====================
 st.title("📊 标注评测报告生成工具")
-st.markdown("上传标注Excel → AI解析统计口径 → 人工确认口径 → 自动统计 → 生成报告 → Case筛选")
+
+# 步骤指示器
+render_step_indicator()
 
 st.divider()
 
