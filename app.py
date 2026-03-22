@@ -133,26 +133,29 @@ st.markdown("""
     }
 
     /* ==================== 交互控件 ==================== */
-    /* 输入框 */
+    /* 输入框 - SaaS无边框悬浮风格 */
     .stTextInput input, .stTextArea textarea, .stSelectbox [data-baseweb="select"] > div, .stMultiSelect [data-baseweb="select"] > div, .stNumberInput input {
-        border: 1px solid var(--gray-300) !important;
+        border: 1px solid transparent !important;
+        background: rgba(243, 244, 246, 0.6) !important;
         border-radius: var(--radius-md) !important;
-        background: #FFFFFF !important;
         color: var(--gray-900) !important;
         font-size: 14px;
         transition: all 0.15s ease;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.02) !important;
+        box-shadow: none !important;
+        padding: 0 12px !important;
     }
     .stTextInput input:hover, .stTextArea textarea:hover, .stSelectbox [data-baseweb="select"] > div:hover, .stMultiSelect [data-baseweb="select"] > div:hover, .stNumberInput input:hover {
-        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+        background: rgba(229, 231, 235, 0.8) !important;
     }
     .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {
-        border-color: var(--accent) !important;
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12), 0 2px 8px rgba(16, 185, 129, 0.15) !important;
+        background: #FFFFFF !important;
+        border-color: var(--gray-300) !important;
+        box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.05), 0 2px 4px rgba(0, 0, 0, 0.05) !important;
     }
     .stSelectbox [data-baseweb="select"] > div:focus-within, .stMultiSelect [data-baseweb="select"] > div:focus-within {
-        border-color: var(--accent) !important;
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12), 0 2px 8px rgba(16, 185, 129, 0.15) !important;
+        background: #FFFFFF !important;
+        border-color: var(--gray-300) !important;
+        box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.05), 0 2px 4px rgba(0, 0, 0, 0.05) !important;
     }
 
     /* 按钮基础风格 */
@@ -196,8 +199,27 @@ st.markdown("""
         transform: none !important;
     }
 
-    /* 删除按钮专用样式 (通过隐藏的 marker 定位) */
-    div[data-testid="stElementContainer"]:has(.delete-btn-marker) + div[data-testid="stElementContainer"] .stButton button {
+    /* ==================== 指标卡片删除按钮优化 ==================== */
+    /* 精准定位“删除指标”按钮，弱化其视觉层级，与输入框高度对齐 */
+    div[data-testid="stExpander"] div[data-testid="column"]:nth-child(2) .stButton button {
+        background: transparent !important;
+        border: 1px solid var(--gray-200) !important;
+        color: var(--gray-500) !important;
+        box-shadow: none !important;
+        font-size: 13px !important;
+        padding: 0 12px !important;
+        height: 38px !important;
+        min-height: 38px !important;
+        transition: all 0.2s ease !important;
+        width: 100% !important;
+    }
+    div[data-testid="stExpander"] div[data-testid="column"]:nth-child(2) .stButton button:hover {
+        border-color: var(--error) !important;
+        color: var(--error) !important;
+        background: rgba(239, 68, 68, 0.05) !important;
+    }
+    /* 通过定位特定宽度比例的列末尾来精准打击删除按钮（条件编辑器与分组维度） */
+    div[data-testid="column"]:nth-child(4):last-child .stButton button {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
@@ -213,7 +235,7 @@ st.markdown("""
         transition: all 0.2s ease !important;
         margin-top: 0px !important;
     }
-    div[data-testid="stElementContainer"]:has(.delete-btn-marker) + div[data-testid="stElementContainer"] .stButton button:hover {
+    div[data-testid="column"]:nth-child(4):last-child .stButton button:hover {
         color: var(--error) !important;
         background: rgba(239, 68, 68, 0.08) !important;
         border-radius: 8px !important;
@@ -1366,11 +1388,11 @@ def render_condition_editor(df, condition_list: list, prefix: str, columns: list
     field_dist = DataService(df).build_field_distribution()
     header1, header2, header3, header4 = st.columns([3, 2, 3, 0.4])
     with header1:
-        st.markdown("**字段**")
+        st.markdown("<div style='font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;'>字段 Field</div>", unsafe_allow_html=True)
     with header2:
-        st.markdown("**运算符**")
+        st.markdown("<div style='font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;'>运算符 Operator</div>", unsafe_allow_html=True)
     with header3:
-        st.markdown("**值**")
+        st.markdown("<div style='font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;'>值 Value</div>", unsafe_allow_html=True)
 
     i = 0
     while i < len(condition_list):
@@ -1378,7 +1400,6 @@ def render_condition_editor(df, condition_list: list, prefix: str, columns: list
         with st.container():
             col1, col2, col3, col4 = st.columns([3, 2, 3, 0.4])
             with col4:
-                st.markdown('<div class="delete-btn-marker" style="display:none;"></div>', unsafe_allow_html=True)
                 if conditions_key:
                     delete_clicked = st.button(
                         "×",
@@ -1475,7 +1496,7 @@ def render_condition_editor(df, condition_list: list, prefix: str, columns: list
                         )
 
         if i < len(condition_list) - 1:
-            st.markdown("<div style='height:8px'></div><div style='height:1px;background:#F3F4F6;margin:4px 0 12px 0;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
         # 再次检查索引有效性（防止删除后索引越界）
         if i < len(condition_list):
@@ -1552,6 +1573,13 @@ def derive_case_filters_from_metrics(metrics_config: dict):
             })
     return badcase_presets, []
 
+
+def _cb_delete_metric(index):
+    """回调函数：安全删除指标"""
+    if "editing_metrics" in st.session_state and "metrics" in st.session_state["editing_metrics"]:
+        metrics = st.session_state["editing_metrics"]["metrics"]
+        if 0 <= index < len(metrics):
+            metrics.pop(index)
 
 @st.fragment
 def render_case_filter_tab(df, case_type: str, conditions_key: str, result_key: str):
@@ -2066,8 +2094,14 @@ def render_metrics_editor_fragment():
                 metric["name"] = st.text_input("指标名称", value=metric.get("name", f"指标{i+1}"), key=f"metric_name_{i}")
 
             with col2:
-                if st.button("删除指标", key=f"del_metric_{i}"):
-                    metrics_to_remove.append(i)
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                st.button(
+                    "🗑️ 删除", 
+                    key=f"del_metric_{i}", 
+                    help="删除此指标",
+                    on_click=_cb_delete_metric,
+                    args=(i,)
+                )
 
             # 分子条件 AND/OR 模式切换
             logic_options = ["全部满足 (AND)", "任一满足 (OR)"]
@@ -2193,8 +2227,9 @@ def render_metrics_editor_fragment():
                               on_click=_cb_add_custom_denom_cond, args=(i,))
                     metric["custom_denominator_conditions"] = custom_denom_conds
 
-    for i in sorted(metrics_to_remove, reverse=True):
-        editing["metrics"].pop(i)
+    # 这部分已经不需要了，因为我们直接通过 rerun 处理了删除
+    # for i in sorted(metrics_to_remove, reverse=True):
+    #     editing["metrics"].pop(i)
 
     st.button("➕ 手动添加新指标", key="add_metric", on_click=_cb_add_metric)
 
@@ -2604,7 +2639,6 @@ if uploaded_file is not None:
                     label_visibility="collapsed"
                 )
             with col_del:
-                st.markdown('<div class="delete-btn-marker" style="display:none;"></div>', unsafe_allow_html=True)
                 if st.button("×", key=f"del_group_dim_{gi}", help="删除此分组维度"):
                     dims_to_remove.append(gi)
             if gi not in dims_to_remove:
