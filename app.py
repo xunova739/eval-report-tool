@@ -6,6 +6,8 @@ import os
 import copy
 import re
 import difflib
+import hashlib
+import time
 import streamlit as st
 import pandas as pd
 import io
@@ -139,11 +141,18 @@ st.markdown("""
         color: var(--gray-900) !important;
         font-size: 14px;
         transition: all 0.15s ease;
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02) !important;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.02) !important;
+    }
+    .stTextInput input:hover, .stTextArea textarea:hover, .stSelectbox [data-baseweb="select"] > div:hover, .stMultiSelect [data-baseweb="select"] > div:hover, .stNumberInput input:hover {
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04) !important;
     }
     .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {
         border-color: var(--accent) !important;
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12), 0 2px 8px rgba(16, 185, 129, 0.15) !important;
+    }
+    .stSelectbox [data-baseweb="select"] > div:focus-within, .stMultiSelect [data-baseweb="select"] > div:focus-within {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12), 0 2px 8px rgba(16, 185, 129, 0.15) !important;
     }
 
     /* 按钮基础风格 */
@@ -167,6 +176,47 @@ st.markdown("""
         border-color: var(--gray-400);
         background-color: var(--gray-50);
         color: var(--gray-900);
+    }
+    .stButton button[kind="tertiary"] {
+        min-height: 1.6rem !important;
+        width: 1.6rem !important;
+        padding: 0 !important;
+        border: none !important;
+        border-radius: 6px !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        color: var(--gray-400) !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        line-height: 1 !important;
+    }
+    .stButton button[kind="tertiary"]:hover {
+        background: rgba(239, 68, 68, 0.08) !important;
+        color: #dc2626 !important;
+        transform: none !important;
+    }
+
+    /* 删除按钮专用样式 (通过隐藏的 marker 定位) */
+    div[data-testid="stElementContainer"]:has(.delete-btn-marker) + div[data-testid="stElementContainer"] .stButton button {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: var(--gray-400) !important;
+        padding: 0 !important;
+        width: 38px !important;
+        height: 38px !important;
+        min-height: 38px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 18px !important;
+        transition: all 0.2s ease !important;
+        margin-top: 0px !important;
+    }
+    div[data-testid="stElementContainer"]:has(.delete-btn-marker) + div[data-testid="stElementContainer"] .stButton button:hover {
+        color: var(--error) !important;
+        background: rgba(239, 68, 68, 0.08) !important;
+        border-radius: 8px !important;
     }
 
     /* 主按钮（深灰主色） */
@@ -278,11 +328,11 @@ st.markdown("""
         display: flex;
         align-items: center;
         background: #FFFFFF;
-        border: 1px solid var(--gray-200);
-        border-radius: var(--radius-lg);
-        padding: 12px 16px;
+        border: 1px solid #E7ECF3;
+        border-radius: 10px;
+        padding: 10px 14px;
         margin-bottom: 1.5rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
     .step {
         display: flex;
@@ -290,34 +340,37 @@ st.markdown("""
         flex: 1;
     }
     .step-number {
-        width: 28px;
-        height: 28px;
+        width: 22px;
+        height: 22px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
-        margin-right: 8px;
+        margin-right: 6px;
+        border: 1px solid transparent;
     }
-    .step.completed .step-number { background: var(--accent); color: white; }
-    .step.current .step-number { background: var(--primary); color: white; }
-    .step.pending .step-number { background: var(--gray-200); color: var(--gray-500); }
+    .step.completed .step-number { background: rgba(16, 185, 129, 0.12); color: #0F766E; border-color: rgba(15, 118, 110, 0.2); }
+    .step.current .step-number { background: #0F172A; color: #FFFFFF; border-color: #0F172A; }
+    .step.pending .step-number { background: #F3F4F6; color: #6B7280; border-color: #E5E7EB; }
     .step-text {
-        font-size: 14px;
+        font-size: 13px;
         color: var(--gray-600);
+        white-space: nowrap;
     }
     .step.completed .step-text, .step.current .step-text {
-        color: var(--gray-900);
+        color: #111827;
         font-weight: 500;
     }
     .step-line {
         flex: 1;
-        height: 2px;
-        background: var(--gray-200);
-        margin: 0 12px;
+        height: 1px;
+        background: #E5E7EB;
+        margin: 0 10px;
     }
-    .step.completed + .step-line { background: var(--accent); }
+    .step.completed + .step-line { background: rgba(16, 185, 129, 0.45); }
+    .status-badge {
         display: inline-flex;
         align-items: center;
         padding: 0.375rem 0.75rem;
@@ -673,8 +726,8 @@ def init_session_state():
         st.session_state["comparison_mode"] = False
     if "generated_report" not in st.session_state:
         st.session_state["generated_report"] = ""
-    if "is_generating_report" not in st.session_state:
-        st.session_state["is_generating_report"] = False
+    if "report_edit_mode" not in st.session_state:
+        st.session_state["report_edit_mode"] = False
     if "trigger_parse_excel" not in st.session_state:
         st.session_state["trigger_parse_excel"] = False
     # 加载已保存的API配置
@@ -705,7 +758,47 @@ def validate_session_keys():
 
 def clear_generated_report():
     st.session_state["generated_report"] = ""
-    st.session_state["is_generating_report"] = False
+    st.session_state["report_edit_mode"] = False
+    st.session_state.pop("report_word_cache_key", None)
+    st.session_state.pop("report_word_cache_bytes", None)
+
+
+def render_copy_markdown_button(
+    text: str,
+    key: str,
+    label: str = "复制Markdown",
+    disabled: bool = False,
+    button_type: str = "secondary"
+):
+    import json
+    if st.button(
+        label,
+        key=key,
+        use_container_width=True,
+        disabled=disabled,
+        type=button_type
+    ):
+        st.write(
+            f'<script>navigator.clipboard.writeText({json.dumps(text or "")})</script>',
+            unsafe_allow_html=True
+        )
+        st.toast("已复制 Markdown")
+
+
+def get_cached_report_word_bytes(report_text: str, stats_result: dict, is_comparison: bool):
+    cache_source = f"{is_comparison}|{report_text}"
+    cache_key = hashlib.md5(cache_source.encode("utf-8")).hexdigest()
+    if st.session_state.get("report_word_cache_key") != cache_key:
+        word_path = ExportService().export_to_word(
+            report_text,
+            stats_result,
+            is_comparison,
+            "标注评测报告"
+        )
+        with open(word_path, "rb") as f:
+            st.session_state["report_word_cache_bytes"] = f.read()
+        st.session_state["report_word_cache_key"] = cache_key
+    return st.session_state.get("report_word_cache_bytes")
 
 
 def request_parse_excel():
@@ -1271,96 +1364,118 @@ def render_condition_editor(df, condition_list: list, prefix: str, columns: list
         return
 
     field_dist = DataService(df).build_field_distribution()
+    header1, header2, header3, header4 = st.columns([3, 2, 3, 0.4])
+    with header1:
+        st.markdown("**字段**")
+    with header2:
+        st.markdown("**运算符**")
+    with header3:
+        st.markdown("**值**")
 
     i = 0
     while i < len(condition_list):
         condition = condition_list[i]
-        col1, col2, col3, col4 = st.columns([3, 2, 3, 1])
-
-        with col1:
-            current_field = condition.get("field", "")
-            field_options = columns if columns else ["（暂无可用字段）"]
-            field_index = field_options.index(current_field) if current_field in field_options else 0
-
-            new_field = st.selectbox(
-                f"字段",
-                options=field_options,
-                index=field_index,
-                key=f"{key_prefix}_field_{i}",
-                disabled=not columns
-            )
-            if not columns:
-                new_field = ""
-
-        with col2:
-            op_options = ["等于", "不等于", "包含", "不包含", "为空", "不为空", "属于", "不属于", "大于", "小于"]
-            op_values = ["==", "!=", "contains", "not_contains", "is_empty", "is_not_empty", "in", "not_in", "greater_than", "less_than"]
-            current_op = condition.get("op", "==")
-            op_index = op_values.index(current_op) if current_op in op_values else 0
-
-            selected_op_label = st.selectbox(
-                f"运算符",
-                options=op_options,
-                index=op_index,
-                key=f"{key_prefix}_op_{i}"
-            )
-            new_op = op_values[op_options.index(selected_op_label)]
-
-        with col3:
-            if new_op in ["is_empty", "is_not_empty"]:
-                new_value = ""
-                st.text_input(f"值", value="(无需填写)", disabled=True, key=f"{key_prefix}_value_{i}")
-            elif new_op in ["greater_than", "less_than"]:
-                current_value = condition.get("value", "")
-                new_value = st.text_input(
-                    f"值",
-                    value=current_value,
-                    key=f"{key_prefix}_value_{i}",
-                    placeholder="请输入数值"
-                )
-            elif new_op in ["in", "not_in"]:
-                current_value = condition.get("value", "")
-                new_value = st.text_input(
-                    f"值",
-                    value=current_value,
-                    key=f"{key_prefix}_value_{i}",
-                    placeholder="多个值用英文逗号分隔，如: A,B,C"
-                )
-            else:
-                # 检查该字段是否含多选值，优先展示拆分后的独立值
-                field_info = field_dist.get(new_field, {})
-                current_value = condition.get("value", "")
-
-                if field_info.get("type") == "categorical_with_multi":
-                    value_options = field_info.get("options", [])
-                else:
-                    value_options = get_column_unique_values(df, new_field)
-
-                if value_options:
-                    new_value = st.selectbox(
-                        f"值",
-                        options=value_options,
-                        index=value_options.index(current_value) if current_value in value_options else 0,
-                        key=f"{key_prefix}_value_{i}"
+        with st.container():
+            col1, col2, col3, col4 = st.columns([3, 2, 3, 0.4])
+            with col4:
+                st.markdown('<div class="delete-btn-marker" style="display:none;"></div>', unsafe_allow_html=True)
+                if conditions_key:
+                    delete_clicked = st.button(
+                        "×",
+                        key=f"{key_prefix}_del_{i}",
+                        help=f"删除此条件",
+                        type="secondary",
+                        on_click=_cb_delete_cond,
+                        args=(conditions_key, i)
                     )
+                    if delete_clicked:
+                        return
                 else:
+                    if st.button("×", key=f"{key_prefix}_del_{i}", help=f"删除此条件", type="secondary"):
+                        condition_list.pop(i)
+                        return
+
+            with col1:
+                current_field = condition.get("field", "")
+                field_options = columns if columns else ["（暂无可用字段）"]
+                field_index = field_options.index(current_field) if current_field in field_options else 0
+
+                new_field = st.selectbox(
+                    "字段",
+                    options=field_options,
+                    index=field_index,
+                    key=f"{key_prefix}_field_{i}",
+                    disabled=not columns,
+                    label_visibility="collapsed"
+                )
+                if not columns:
+                    new_field = ""
+
+            with col2:
+                op_options = ["等于", "不等于", "包含", "不包含", "为空", "不为空", "属于", "不属于", "大于", "小于"]
+                op_values = ["==", "!=", "contains", "not_contains", "is_empty", "is_not_empty", "in", "not_in", "greater_than", "less_than"]
+                current_op = condition.get("op", "==")
+                op_index = op_values.index(current_op) if current_op in op_values else 0
+
+                selected_op_label = st.selectbox(
+                    "运算符",
+                    options=op_options,
+                    index=op_index,
+                    key=f"{key_prefix}_op_{i}",
+                    label_visibility="collapsed"
+                )
+                new_op = op_values[op_options.index(selected_op_label)]
+
+            with col3:
+                if new_op in ["is_empty", "is_not_empty"]:
+                    new_value = ""
+                    st.text_input("值", value="(无需填写)", disabled=True, key=f"{key_prefix}_value_{i}", label_visibility="collapsed")
+                elif new_op in ["greater_than", "less_than"]:
+                    current_value = condition.get("value", "")
                     new_value = st.text_input(
-                        f"值",
+                        "值",
                         value=current_value,
                         key=f"{key_prefix}_value_{i}",
-                        placeholder="该字段暂无可选值，请手动输入"
+                        placeholder="请输入数值",
+                        label_visibility="collapsed"
                     )
+                elif new_op in ["in", "not_in"]:
+                    current_value = condition.get("value", "")
+                    new_value = st.text_input(
+                        "值",
+                        value=current_value,
+                        key=f"{key_prefix}_value_{i}",
+                        placeholder="多个值用英文逗号分隔，如: A,B,C",
+                        label_visibility="collapsed"
+                    )
+                else:
+                    field_info = field_dist.get(new_field, {})
+                    current_value = condition.get("value", "")
 
-        with col4:
-            if conditions_key:
-                # 使用 on_click 回调，避免 fragment 内按钮状态问题
-                st.button("🗑️", key=f"{key_prefix}_del_{i}", help=f"删除此条件",
-                          on_click=_cb_delete_cond, args=(conditions_key, i))
-            else:
-                # 兼容旧调用方式：删除后跳出循环，等待下次渲染
-                if st.button("🗑️", key=f"{key_prefix}_del_{i}", help=f"删除此条件"):
-                    condition_list.pop(i)
-                    return  # 删除后直接返回，触发重新渲染
+                    if field_info.get("type") == "categorical_with_multi":
+                        value_options = field_info.get("options", [])
+                    else:
+                        value_options = get_column_unique_values(df, new_field)
+
+                    if value_options:
+                        new_value = st.selectbox(
+                            "值",
+                            options=value_options,
+                            index=value_options.index(current_value) if current_value in value_options else 0,
+                            key=f"{key_prefix}_value_{i}",
+                            label_visibility="collapsed"
+                        )
+                    else:
+                        new_value = st.text_input(
+                            "值",
+                            value=current_value,
+                            key=f"{key_prefix}_value_{i}",
+                            placeholder="该字段暂无可选值，请手动输入",
+                            label_visibility="collapsed"
+                        )
+
+        if i < len(condition_list) - 1:
+            st.markdown("<div style='height:8px'></div><div style='height:1px;background:#F3F4F6;margin:4px 0 12px 0;'></div>", unsafe_allow_html=True)
 
         # 再次检查索引有效性（防止删除后索引越界）
         if i < len(condition_list):
@@ -1495,7 +1610,7 @@ def render_case_filter_tab(df, case_type: str, conditions_key: str, result_key: 
                   on_click=_cb_add_case_cond, args=(conditions_key,))
 
     with col2:
-        st.button("🗑️ 清空条件", key=f"clear_{case_type}_cond", use_container_width=True,
+        st.button("清空条件", key=f"clear_{case_type}_cond", use_container_width=True,
                   on_click=_cb_clear_case_conds, args=(conditions_key, result_key))
 
     # 更新条件
@@ -1898,7 +2013,7 @@ def render_metrics_editor_fragment():
                     if isinstance(grp, dict):
                         grp["name"] = new_name
                 with g_col2:
-                    st.button("🗑️", key=f"del_denom_grp_{gi}",
+                    st.button("−", key=f"del_denom_grp_{gi}",
                               on_click=_cb_del_denom_group, args=(gi,),
                               help="删除此组")
                 if grp_conds:
@@ -1951,7 +2066,7 @@ def render_metrics_editor_fragment():
                 metric["name"] = st.text_input("指标名称", value=metric.get("name", f"指标{i+1}"), key=f"metric_name_{i}")
 
             with col2:
-                if st.button("🗑️ 删除指标", key=f"del_metric_{i}"):
+                if st.button("删除指标", key=f"del_metric_{i}"):
                     metrics_to_remove.append(i)
 
             # 分子条件 AND/OR 模式切换
@@ -2156,7 +2271,7 @@ with st.sidebar:
             save_api_config(api_key, base_url, model_name)
             st.success("已保存")
     with col_del:
-        if st.button("🗑️ 删除配置", use_container_width=True):
+        if st.button("删除配置", use_container_width=True):
             delete_api_config()
             st.success("已删除")
 
@@ -2178,7 +2293,7 @@ with st.sidebar:
         if st.button("🔄 重新运行", use_container_width=True):
             st.rerun()
     with col2:
-        if st.button("🗑️ 清除缓存", use_container_width=True):
+        if st.button("清除缓存", use_container_width=True):
             st.cache_data.clear()
             st.cache_resource.clear()
             st.success("缓存已清除")
@@ -2191,7 +2306,7 @@ with st.sidebar:
         st.info("📂 请上传数据文件（Excel 或 CSV）")
 
 # ==================== 主界面 ====================
-st.title("📊 标注评测报告生成工具")
+st.title("标注评测报告生成工具")
 
 # 步骤指示器
 render_step_indicator()
@@ -2416,7 +2531,18 @@ if uploaded_file is not None:
                                 editing_copy.setdefault("common_denominator", {})["ai_analyzed_conditions"] = []
                                 editing_copy["common_denominator"]["type"] = "all"
                             st.session_state["editing_metrics"] = editing_copy
-                            st.success("✅ 解析成功！")
+                            # 自动确认口径配置，无需用户手动点击
+                            st.session_state["confirmed_metrics"] = editing_copy.copy()
+                            # 重置统计相关状态，触发自动统计
+                            st.session_state["prev_stats_signature"] = ""
+                            st.session_state["stats_result"] = None
+                            st.session_state["stats_last_update"] = None
+                            st.session_state["stats_error"] = None
+                            # 生成 case 筛选预设
+                            presets_bad, presets_good = derive_case_filters_from_metrics(editing_copy)
+                            st.session_state["badcase_presets"] = presets_bad
+                            st.session_state["goodcase_presets"] = presets_good
+                            st.success("解析成功，已自动统计！")
                             if fix_log:
                                 fix_lines = []
                                 for item in fix_log:
@@ -2478,7 +2604,8 @@ if uploaded_file is not None:
                     label_visibility="collapsed"
                 )
             with col_del:
-                if st.button("🗑️", key=f"del_group_dim_{gi}", help="删除此分组维度"):
+                st.markdown('<div class="delete-btn-marker" style="display:none;"></div>', unsafe_allow_html=True)
+                if st.button("×", key=f"del_group_dim_{gi}", help="删除此分组维度"):
                     dims_to_remove.append(gi)
             if gi not in dims_to_remove:
                 confirmed_groups.append({"label": new_label or gd["label"], "field": selected_field, "values": selected_vals})
@@ -2533,7 +2660,7 @@ if uploaded_file is not None:
         st.divider()
 
         if st.session_state.get("parsed_metrics"):
-            st.subheader("6. 确认口径配置")
+            st.subheader("6. 口径配置（可编辑）")
 
             editing = st.session_state["editing_metrics"]
 
@@ -2545,14 +2672,20 @@ if uploaded_file is not None:
             col1, col2, col3 = st.columns([2, 1, 1])
 
             with col1:
-                if st.button("确认口径配置", type="primary", use_container_width=True):
+                if st.button("应用修改并重新统计", type="primary", use_container_width=True):
                     is_valid, errors = validate_metrics_config(editing, st.session_state["columns"])
                     if is_valid:
                         st.session_state["confirmed_metrics"] = editing.copy()
                         presets_bad, presets_good = derive_case_filters_from_metrics(editing)
                         st.session_state["badcase_presets"] = presets_bad
                         st.session_state["goodcase_presets"] = presets_good
-                        st.success("口径配置已确认！")
+                        # 重置签名以触发重新统计
+                        st.session_state["prev_stats_signature"] = ""
+                        st.session_state["stats_result"] = None
+                        st.session_state["stats_last_update"] = None
+                        st.session_state["stats_error"] = None
+                        st.success("已应用修改，正在重新统计...")
+                        st.rerun()
                     else:
                         for error in errors:
                             st.error(error)
@@ -2563,8 +2696,10 @@ if uploaded_file is not None:
                     st.session_state["editing_metrics"] = EMPTY_METRICS_CONFIG.copy()
                     st.session_state.pop("confirmed_metrics", None)
                     st.session_state.pop("stats_result", None)
+                    st.session_state.pop("stats_last_update", None)
+                    st.session_state.pop("stats_error", None)
+                    st.session_state.pop("prev_stats_signature", None)
                     st.session_state.pop("generated_report", None)
-                    st.session_state["is_generating_report"] = False
                     st.session_state["trigger_parse_excel"] = False
                     clear_metrics_editor_keys()
                     st.rerun()
@@ -2579,6 +2714,25 @@ if uploaded_file is not None:
                 st.subheader("7. 执行统计")
 
                 confirmed = st.session_state["confirmed_metrics"]
+
+                # 自动更新开关（默认开启）
+                auto_update = st.toggle("自动更新", value=True, key="auto_update_stats",
+                                        help="开启后，条件变化会自动重新统计；关闭后需手动点击统计按钮")
+
+                # 保存当前条件签名用于检测变化
+                current_stats_signature = str({
+                    "comparison_mode": st.session_state.get("comparison_mode", False),
+                    "grouping_mode": st.session_state.get("grouping_mode", False),
+                    "compare_field": st.session_state.get("compare_field_select", ""),
+                    "version_a": st.session_state.get("version_a_select", ""),
+                    "version_b": st.session_state.get("version_b_select", ""),
+                    "group_field": st.session_state.get("group_field_select", ""),
+                    "confirmed_hash": hash(str(confirmed))
+                })
+
+                prev_signature = st.session_state.get("prev_stats_signature", "")
+                conditions_changed = current_stats_signature != prev_signature
+                st.session_state["prev_stats_signature"] = current_stats_signature
 
                 comparison_mode = st.toggle("启用版本对比模式", value=st.session_state.get("comparison_mode", False), key="comparison_mode_toggle")
                 st.session_state["comparison_mode"] = comparison_mode
@@ -2632,80 +2786,99 @@ if uploaded_file is not None:
                 else:
                     group_field = None
 
-                if st.button("开始统计", type="primary", use_container_width=True):
-                    with st.spinner("正在计算统计指标..."):
-                        try:
-                            confirmed_obj = MetricsConfig.from_dict(confirmed) if isinstance(confirmed, dict) else confirmed
-                            if comparison_mode and compare_field and version_a and version_b:
-                                stats_result = DataService(st.session_state["df"]).calculate_metrics_with_comparison(confirmed_obj, compare_field, version_a, version_b)
-                            elif grouping_mode:
-                                auto_groups = st.session_state.get("confirmed_group_dimensions", [])
-                                if auto_groups and len(auto_groups) > 1:
-                                    multi_results = []
-                                    for gd in auto_groups:
-                                        r = DataService(st.session_state["df"]).calculate_metrics_with_grouping(confirmed_obj, gd["field"])
-                                        multi_results.append(r)
-                                    stats_result = {"multi_group": True, "group_results": multi_results}
-                                elif group_field:
-                                    stats_result = DataService(st.session_state["df"]).calculate_metrics_with_grouping(confirmed_obj, group_field)
-                                else:
-                                    stats_result = DataService(st.session_state["df"]).calculate_metrics(confirmed_obj)
+                # 执行统计的函数
+                def do_statistics():
+                    """执行统计并保存结果"""
+                    try:
+                        confirmed_obj = MetricsConfig.from_dict(confirmed) if isinstance(confirmed, dict) else confirmed
+                        if comparison_mode and compare_field and version_a and version_b:
+                            stats_result = DataService(st.session_state["df"]).calculate_metrics_with_comparison(confirmed_obj, compare_field, version_a, version_b)
+                        elif grouping_mode:
+                            auto_groups = st.session_state.get("confirmed_group_dimensions", [])
+                            if auto_groups and len(auto_groups) > 1:
+                                multi_results = []
+                                for gd in auto_groups:
+                                    r = DataService(st.session_state["df"]).calculate_metrics_with_grouping(confirmed_obj, gd["field"])
+                                    multi_results.append(r)
+                                stats_result = {"multi_group": True, "group_results": multi_results}
+                            elif group_field:
+                                stats_result = DataService(st.session_state["df"]).calculate_metrics_with_grouping(confirmed_obj, group_field)
                             else:
                                 stats_result = DataService(st.session_state["df"]).calculate_metrics(confirmed_obj)
+                        else:
+                            stats_result = DataService(st.session_state["df"]).calculate_metrics(confirmed_obj)
 
-                            # 统一转换为 dict 供展示层使用
-                            if hasattr(stats_result, 'to_dict') and stats_result.group_field:
-                                # 分组模式：构建展示所需的 flat 格式
-                                _groups = stats_result.groups
-                                _gr_map = stats_result.group_results  # {group_value: StatsResult}
+                        # 统一转换为 dict 供展示层使用
+                        if hasattr(stats_result, 'to_dict') and stats_result.group_field:
+                            # 分组模式：构建展示所需的 flat 格式
+                            _groups = stats_result.groups
+                            _gr_map = stats_result.group_results  # {group_value: StatsResult}
 
-                                # 【关键修复】从配置中获取指标名称，避免因分组数据为空导致指标遗漏
-                                _metric_names = [m.name for m in confirmed_obj.metrics] if hasattr(confirmed_obj, 'metrics') else []
+                            # 【关键修复】从配置中获取指标名称，避免因分组数据为空导致指标遗漏
+                            _metric_names = [m.name for m in confirmed_obj.metrics] if hasattr(confirmed_obj, 'metrics') else []
 
-                                # 如果配置中没有指标名称，从分组结果中收集（兼容旧逻辑）
-                                if not _metric_names:
-                                    for _g in _groups:
-                                        _gs = _gr_map.get(_g)
-                                        if _gs and hasattr(_gs, 'results'):
-                                            for _r in _gs.results:
-                                                if _r.name not in _metric_names:
-                                                    _metric_names.append(_r.name)
+                            # 如果配置中没有指标名称，从分组结果中收集（兼容旧逻辑）
+                            if not _metric_names:
+                                for _g in _groups:
+                                    _gs = _gr_map.get(_g)
+                                    if _gs and hasattr(_gs, 'results'):
+                                        for _r in _gs.results:
+                                            if _r.name not in _metric_names:
+                                                _metric_names.append(_r.name)
 
-                                # 构建 flat results（每个指标行包含各分组数据）
-                                _flat_results = []
-                                for _name in _metric_names:
-                                    _row = {"name": _name}
-                                    for _g in _groups:
-                                        _gs = _gr_map.get(_g)
-                                        if _gs and hasattr(_gs, 'results'):
-                                            _mr = next((r for r in _gs.results if r.name == _name), None)
-                                            _row[_g] = {"percentage": _mr.percentage, "numerator": _mr.numerator, "denominator": _mr.denominator} if _mr else {}
-                                        else:
-                                            _row[_g] = {}
-                                    _flat_results.append(_row)
-                                # 构建 denominator_counts
-                                _denom_counts = {_g: _gr_map[_g].denominator_count for _g in _groups if _g in _gr_map}
-                                stats_result = {
-                                    "group_field": stats_result.group_field,
-                                    "groups": _groups,
-                                    "denominator_count": _denom_counts.get("全部", 0),
-                                    "denominator_counts": _denom_counts,
-                                    "denominator_description": stats_result.denominator_description,
-                                    "results": _flat_results
-                                }
-                            elif hasattr(stats_result, 'to_dict'):
-                                stats_result = stats_result.to_dict()
-                            elif isinstance(stats_result, dict) and stats_result.get("multi_group"):
-                                stats_result["group_results"] = [
-                                    r.to_dict() if hasattr(r, 'to_dict') else r
-                                    for r in stats_result["group_results"]
-                                ]
-                            st.session_state["stats_result"] = stats_result
-                            st.success("统计完成！")
-                        except Exception as e:
-                            import traceback
-                            st.error(f"统计失败: {str(e)}")
-                            st.code(traceback.format_exc())
+                            # 构建 flat results（每个指标行包含各分组数据）
+                            _flat_results = []
+                            for _name in _metric_names:
+                                _row = {"name": _name}
+                                for _g in _groups:
+                                    _gs = _gr_map.get(_g)
+                                    if _gs and hasattr(_gs, 'results'):
+                                        _mr = next((r for r in _gs.results if r.name == _name), None)
+                                        _row[_g] = {"percentage": _mr.percentage, "numerator": _mr.numerator, "denominator": _mr.denominator} if _mr else {}
+                                    else:
+                                        _row[_g] = {}
+                                _flat_results.append(_row)
+                            # 构建 denominator_counts
+                            _denom_counts = {_g: _gr_map[_g].denominator_count for _g in _groups if _g in _gr_map}
+                            stats_result = {
+                                "group_field": stats_result.group_field,
+                                "groups": _groups,
+                                "denominator_count": _denom_counts.get("全部", 0),
+                                "denominator_counts": _denom_counts,
+                                "denominator_description": stats_result.denominator_description,
+                                "results": _flat_results
+                            }
+                        elif hasattr(stats_result, 'to_dict'):
+                            stats_result = stats_result.to_dict()
+                        elif isinstance(stats_result, dict) and stats_result.get("multi_group"):
+                            stats_result["group_results"] = [
+                                r.to_dict() if hasattr(r, 'to_dict') else r
+                                for r in stats_result["group_results"]
+                            ]
+                        st.session_state["stats_result"] = stats_result
+                        st.session_state["stats_last_update"] = datetime.now().strftime("%H:%M:%S")
+                        st.session_state["stats_error"] = None
+                    except Exception as e:
+                        import traceback
+                        st.session_state["stats_error"] = str(e)
+                        st.session_state["stats_traceback"] = traceback.format_exc()
+
+                # 显示更新时间和错误
+                if st.session_state.get("stats_last_update"):
+                    st.caption(f"最后更新: {st.session_state['stats_last_update']}")
+
+                if st.session_state.get("stats_error"):
+                    st.error(f"统计失败: {st.session_state['stats_error']}")
+                    with st.expander("查看详细错误"):
+                        st.code(st.session_state.get("stats_traceback", ""))
+
+                # 自动更新或手动统计
+                if auto_update and conditions_changed:
+                    do_statistics()
+                elif not auto_update:
+                    if st.button("手动统计", type="primary", use_container_width=True):
+                        do_statistics()
+                        st.rerun()
 
         else:
             st.info("👆 请先上传口径Excel")
@@ -2848,24 +3021,35 @@ if uploaded_file is not None:
                 key="task_background_input"
             )
 
-            col1, col2 = st.columns([1, 3])
+            toolbar_col1, toolbar_col2, toolbar_col3 = st.columns(3)
 
-            with col1:
+            with toolbar_col1:
                 generate_report_clicked = st.button(
                     "生成评测报告",
                     type="primary",
                     use_container_width=True,
-                    disabled=(not api_configured) or st.session_state.get("is_generating_report", False),
+                    disabled=(not api_configured),
                     key="generate_report_btn"
                 )
-                if generate_report_clicked and api_configured and (not st.session_state.get("is_generating_report", False)):
-                    st.session_state["is_generating_report"] = True
+            with toolbar_col2:
+                if st.button(
+                    "完成编辑" if st.session_state.get("report_edit_mode") else "编辑Markdown",
+                    key="toggle_report_edit_btn",
+                    use_container_width=True,
+                    disabled=(not st.session_state.get("generated_report")),
+                    type="secondary"
+                ):
+                    st.session_state["report_edit_mode"] = not st.session_state.get("report_edit_mode", False)
+            with toolbar_col3:
+                render_copy_markdown_button(
+                    st.session_state.get("generated_report", ""),
+                    key="copy_report_preview_btn",
+                    label="复制Markdown",
+                    disabled=(not st.session_state.get("generated_report")),
+                    button_type="secondary"
+                )
 
-            with col2:
-                if st.session_state.get("generated_report"):
-                    st.info("报告已生成，可编辑或重新生成")
-
-            if st.session_state.get("is_generating_report"):
+            if generate_report_clicked and api_configured:
                 with st.spinner("AI正在生成评测报告..."):
                     try:
                         llm = LLMService(st.session_state["api_key"], st.session_state["base_url"], st.session_state.get("model_name", "glm-4"))
@@ -2896,49 +3080,39 @@ if uploaded_file is not None:
 
                     except Exception as e:
                         st.error(format_api_error(e))
-                st.session_state["is_generating_report"] = False
 
             # 报告编辑和导出
             if st.session_state.get("generated_report"):
-                # 渲染预览
-                st.markdown("**报告预览**")
+                st.markdown("**报告编辑（Markdown）**" if st.session_state.get("report_edit_mode") else "**报告预览**")
                 with st.container(border=True):
-                    st.markdown(st.session_state["generated_report"])
+                    if st.session_state.get("report_edit_mode"):
+                        edited_report = st.text_area(
+                            "报告内容",
+                            value=st.session_state["generated_report"],
+                            height=400,
+                            key="report_editor_inline",
+                            label_visibility="collapsed"
+                        )
+                        st.session_state["generated_report"] = edited_report
+                    else:
+                        st.markdown(st.session_state["generated_report"])
 
-                # 复制区域
-                with st.expander("📋 复制报告内容", expanded=False):
-                    st.code(st.session_state["generated_report"], language="markdown")
-                    st.caption("点击右上角复制图标即可复制全文")
-
-                # 编辑区域
-                with st.expander("✏️ 编辑报告内容", expanded=False):
-                    edited_report = st.text_area(
-                        "报告内容",
-                        value=st.session_state["generated_report"],
-                        height=400,
-                        key="report_editor",
-                        label_visibility="collapsed"
-                    )
-                    st.session_state["generated_report"] = edited_report
-
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
 
                 with col1:
-                    st.button("🔄 重新生成", use_container_width=True, on_click=clear_generated_report, key="regenerate_report_btn")
+                    st.button("重新生成", use_container_width=True, on_click=clear_generated_report, key="regenerate_report_btn")
 
                 with col2:
                     try:
-                        word_path = ExportService().export_to_word(
+                        word_bytes = get_cached_report_word_bytes(
                             st.session_state["generated_report"],
                             stats_result,
-                            is_comparison,
-                            "标注评测报告"
+                            is_comparison
                         )
-
-                        with open(word_path, "rb") as f:
+                        if word_bytes:
                             st.download_button(
-                                label="📄 导出为Word",
-                                data=f,
+                                label="导出为Word",
+                                data=word_bytes,
                                 file_name=f"评测报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True

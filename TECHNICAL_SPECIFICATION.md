@@ -74,18 +74,26 @@ v2.0 相比 v1.0 的重大改进：
 
 ```
 eval-report-tool/
+├── app.py                   # Streamlit 主入口
 ├── domain_1.py              # 领域模型层：Condition, Metric, MetricsConfig 等
 ├── domain_1_1.py            # 异常定义：ValidationError, ConfigLoadError 等
 ├── services_2_1.py          # 数据服务：DataService (清洗、筛选、统计)
 ├── services_2_2.py          # LLM 服务：LLMService (API 调用、JSON 解析)
 ├── prompts_3.py             # Prompt 模板：口径解析、报告生成模板
 ├── config_5.py              # 配置管理：APIConfig, ConfigManager
+├── exports_6.py             # 导出服务：Word/Excel导出
 ├── utils_7.py               # 格式化工具：统计结果格式化
 ├── utils_7_2.py             # 验证工具：口径配置验证、自动修复
-├── exports_6.py             # 导出服务：Word/Excel导出
-├── app.py                   # Streamlit 主入口
+├── requirements.txt         # 依赖列表
+├── temp/                    # 运行时目录
+│   ├── exported/            # 导出的报告/Excel
+│   └── uploaded/            # 上传的临时文件
+├── CLAUDE.md                # Claude 开发规范
 ├── TECHNICAL_SPECIFICATION.md # 本技术说明书
-└── README.md                # 项目说明
+├── CODE_INDEX.md            # 代码索引
+├── DESIGN.md                # 设计规范
+├── BUGS_AND_SOLUTIONS.md    # Bug 记录与解决方案
+└── PROJECT_SUMMARY.md       # 项目总结
 ```
 
 ### 2.3 模块编号规则

@@ -25,17 +25,26 @@
 
 ```
 eval-report-tool/
-├── app.py              # 主应用入口 (~2100行)
-├── domain_1.py         # 领域模型层 (Condition, Metric, StatsResult 等)
-├── domain_1_1.py       # 异常定义层
-├── services_2_1.py     # 数据服务 (DataService)
-├── services_2_2.py     # LLM 服务 (LLMService)
-├── prompts_3.py        # Prompt 模板
-├── config_5.py         # 配置管理
-├── exports_6.py        # 导出服务 (Word/Excel)
-├── utils_7.py          # 格式化工具
-├── utils_7_2.py        # 验证与自动修复工具
-└── requirements.txt    # 依赖列表
+├── app.py                  # 主应用入口 (~3000行)
+├── domain_1.py             # 领域模型层 (Condition, Metric, StatsResult 等)
+├── domain_1_1.py           # 异常定义层
+├── services_2_1.py         # 数据服务 (DataService)
+├── services_2_2.py         # LLM 服务 (LLMService)
+├── prompts_3.py            # Prompt 模板
+├── config_5.py             # 配置管理
+├── exports_6.py            # 导出服务 (Word/Excel)
+├── utils_7.py              # 格式化工具
+├── utils_7_2.py            # 验证与自动修复工具
+├── requirements.txt        # 依赖列表
+├── temp/                   # 运行时目录 (导出文件存放)
+│   ├── exported/           # 导出的报告/Excel
+│   └── uploaded/           # 上传的临时文件
+├── CLAUDE.md               # Claude 开发规范
+├── TECHNICAL_SPECIFICATION.md  # 技术架构说明书
+├── CODE_INDEX.md           # 代码索引
+├── DESIGN.md               # 设计规范
+├── BUGS_AND_SOLUTIONS.md   # Bug 记录与解决方案
+└── PROJECT_SUMMARY.md      # 本文件
 ```
 
 ---
@@ -144,3 +153,4 @@ python3 -m streamlit run app.py --server.port 8502
 | 2026-03-22 | 修复 apply_condition 不兼容 dict 格式条件导致 Case 筛选报错 |
 | 2026-03-22 | 简化指标编辑 UI：删除 OR 组独立编辑区，统一用 AND/OR 开关控制 |
 | 2026-03-22 | 新增 migrate_or_conditions_to_flat() 将 AI 解析的 OR 结构平铺 |
+| 2026-03-22 | 整理项目目录：删除 7 个空文件夹和 2 个遗留文件 |
