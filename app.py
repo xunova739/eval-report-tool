@@ -81,6 +81,10 @@ st.markdown("""
     }
 
     /* ==================== 全局基础 ==================== */
+    /* 强制所有元素使用 Inter 字体 */
+    *, *::before, *::after {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+    }
     .stApp {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
         background-color: var(--gray-50);
