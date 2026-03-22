@@ -344,3 +344,20 @@ from prompts_3 import PARSE_METRIC_EXCEL_PROMPT, REPORT_PROMPT_TEMPLATE
 # ❌ 错误：导入未使用的项
 # from domain_1 import MetricsConfig, Metric, Condition  # 仅在类型注解中使用
 ```
+
+---
+
+## Design System
+
+**Always read DESIGN.md before making any visual or UI decisions.**
+
+所有字体选择、颜色、间距和美学方向都在 `DESIGN.md` 中定义。
+
+**核心原则**：
+- 功能优先，无多余装饰
+- 使用 Inter 字体（无衬线），不要使用 Times 等衬线字体
+- 主色 `#0F172A`，强调色 `#10B981`（翠绿）
+- 间距使用 8px 基准
+- 不要偏离设计系统，除非用户明确批准
+
+**在 QA 模式下，标记任何不符合 DESIGN.md 的代码**。
