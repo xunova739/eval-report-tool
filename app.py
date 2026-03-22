@@ -1401,20 +1401,23 @@ def render_condition_editor(df, condition_list: list, prefix: str, columns: list
             col1, col2, col3, col4 = st.columns([3, 2, 3, 0.4])
             with col4:
                 if conditions_key:
-                    delete_clicked = st.button(
+                    st.button(
                         "×",
                         key=f"{key_prefix}_del_{i}",
                         help=f"删除此条件",
                         type="secondary",
                         on_click=_cb_delete_cond,
-                        args=(conditions_key, i)
+                        args=(condition_list, i)
                     )
-                    if delete_clicked:
-                        return
                 else:
-                    if st.button("×", key=f"{key_prefix}_del_{i}", help=f"删除此条件", type="secondary"):
-                        condition_list.pop(i)
-                        return
+                    st.button(
+                        "×", 
+                        key=f"{key_prefix}_del_{i}", 
+                        help=f"删除此条件", 
+                        type="secondary",
+                        on_click=_cb_delete_cond,
+                        args=(condition_list, i)
+                    )
 
             with col1:
                 current_field = condition.get("field", "")
@@ -1936,12 +1939,10 @@ def _cb_add_case_cond(conditions_key):
     st.session_state[conditions_key] = conditions
 
 
-def _cb_delete_cond(conditions_key, index):
+def _cb_delete_cond(condition_list_ref, index):
     """删除指定索引的条件"""
-    conditions = st.session_state.get(conditions_key, [])
-    if 0 <= index < len(conditions):
-        conditions.pop(index)
-        st.session_state[conditions_key] = conditions
+    if 0 <= index < len(condition_list_ref):
+        condition_list_ref.pop(index)
 
 
 def _cb_clear_case_conds(conditions_key, result_key):
@@ -3066,20 +3067,22 @@ if uploaded_file is not None:
                     key="generate_report_btn"
                 )
             with toolbar_col2:
+                has_report = bool(st.session_state.get("generated_report", "").strip())
                 if st.button(
                     "完成编辑" if st.session_state.get("report_edit_mode") else "编辑Markdown",
                     key="toggle_report_edit_btn",
                     use_container_width=True,
-                    disabled=(not st.session_state.get("generated_report")),
+                    disabled=not has_report,
                     type="secondary"
                 ):
                     st.session_state["report_edit_mode"] = not st.session_state.get("report_edit_mode", False)
+                    st.rerun()
             with toolbar_col3:
                 render_copy_markdown_button(
                     st.session_state.get("generated_report", ""),
                     key="copy_report_preview_btn",
                     label="复制Markdown",
-                    disabled=(not st.session_state.get("generated_report")),
+                    disabled=not has_report,
                     button_type="secondary"
                 )
 
