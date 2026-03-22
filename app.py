@@ -47,14 +47,44 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ==================== 自定义CSS（中文化界面） ====================
+# ==================== 自定义CSS（极简现代风格） ====================
+# 字体：Inter - 来自 Google Fonts
 st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-    /* ==================== 顶级 SaaS 数据工作台风格 ==================== */
+    /* ==================== 设计系统变量 ==================== */
+    :root {
+        --primary: #0F172A;
+        --primary-hover: #1E293B;
+        --secondary: #64748B;
+        --accent: #10B981;
+        --accent-hover: #059669;
+        --gray-50: #F9FAFB;
+        --gray-100: #F3F4F6;
+        --gray-200: #E5E7EB;
+        --gray-300: #D1D5DB;
+        --gray-400: #9CA3AF;
+        --gray-500: #6B7280;
+        --gray-600: #4B5563;
+        --gray-700: #374151;
+        --gray-800: #1F2937;
+        --gray-900: #111827;
+        --success: #10B981;
+        --warning: #F59E0B;
+        --error: #EF4444;
+        --info: #3B82F6;
+        --radius-sm: 4px;
+        --radius-md: 8px;
+        --radius-lg: 12px;
+    }
+
+    /* ==================== 全局基础 ==================== */
     .stApp {
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Roboto", "Helvetica Neue", Arial, sans-serif;
-        background-color: #F9FAFB; /* 极简高级灰白底色 */
-        color: #111827;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        background-color: var(--gray-50);
+        color: var(--gray-900);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
     }
@@ -68,53 +98,54 @@ st.markdown("""
     
     /* 文本与层级 */
     h1, h2, h3, h4, h5, h6 {
-        color: #0F172A;
+        color: var(--primary);
         font-weight: 600;
         letter-spacing: -0.01em;
     }
+    h1 { font-size: 2.5rem; font-weight: 700; }
     h2 { font-size: 1.5rem; margin-top: 1.5rem; margin-bottom: 1rem; }
     h3 { font-size: 1.25rem; margin-top: 1.25rem; margin-bottom: 0.75rem; }
-    
-    /* 修复之前全局p标签导致的按钮文字变灰问题 */
+
+    /* 正文文字 */
     .stMarkdown p, li, label, .stCaption {
-        color: #4B5563;
+        color: var(--gray-600);
         line-height: 1.6;
         font-size: 14px;
     }
-    
-    /* 卡片与表单容器（去除廉价粗边框，改用弥散阴影） */
+
+    /* 卡片与表单容器 */
     [data-testid="stForm"], [data-testid="stExpander"] {
         background: #FFFFFF;
-        border: 1px solid #E5E7EB !important;
-        border-radius: 12px !important;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05) !important;
+        border: 1px solid var(--gray-200) !important;
+        border-radius: var(--radius-lg) !important;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
         padding: 1.25rem;
     }
     [data-testid="stExpander"] details summary {
         font-weight: 600;
-        color: #111827;
+        color: var(--gray-900);
     }
 
     /* ==================== 交互控件 ==================== */
     /* 输入框 */
     .stTextInput input, .stTextArea textarea, .stSelectbox [data-baseweb="select"] > div, .stMultiSelect [data-baseweb="select"] > div, .stNumberInput input {
-        border: 1px solid #D1D5DB !important;
-        border-radius: 8px !important;
+        border: 1px solid var(--gray-300) !important;
+        border-radius: var(--radius-md) !important;
         background: #FFFFFF !important;
-        color: #111827 !important;
+        color: var(--gray-900) !important;
         font-size: 14px;
         transition: all 0.15s ease;
         box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02) !important;
     }
     .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {
-        border-color: #0F172A !important;
-        box-shadow: 0 0 0 1px #0F172A !important;
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
     }
 
-    /* 按钮基础风格（苹果/Linear质感） */
+    /* 按钮基础风格 */
     .stButton button {
-        border-radius: 8px;
-        border: 1px solid #D1D5DB;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--gray-300);
         background-color: #FFFFFF;
         font-weight: 500;
         font-size: 14px;
@@ -123,30 +154,39 @@ st.markdown("""
         box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
         transition: all 0.15s ease;
     }
-    /* 强制继承颜色，修复Streamlit按钮内p标签文字变色Bug */
     .stButton button p {
         color: inherit !important;
         margin: 0 !important;
         font-weight: inherit !important;
     }
     .stButton button:hover {
-        border-color: #9CA3AF;
-        background-color: #F9FAFB;
-        color: #111827;
+        border-color: var(--gray-400);
+        background-color: var(--gray-50);
+        color: var(--gray-900);
     }
 
-    /* 主按钮（深邃极简黑） */
+    /* 主按钮（深灰主色） */
     .stButton button[data-testid="baseButton-primary"], .stButton button[kind="primary"] {
-        background-color: #18181B !important;
-        border-color: #18181B !important;
+        background-color: var(--primary) !important;
+        border-color: var(--primary) !important;
         color: #FFFFFF !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04) !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08) !important;
     }
     .stButton button[data-testid="baseButton-primary"]:hover, .stButton button[kind="primary"]:hover {
-        background-color: #27272A !important;
-        border-color: #27272A !important;
+        background-color: var(--primary-hover) !important;
+        border-color: var(--primary-hover) !important;
         transform: translateY(-1px);
-        box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+    }
+
+    /* 强调按钮（翠绿） */
+    .stButton button.accent-button {
+        background-color: var(--accent) !important;
+        border-color: var(--accent) !important;
+        color: #FFFFFF !important;
+    }
+    .stButton button.accent-button:hover {
+        background-color: var(--accent-hover) !important;
+        transform: translateY(-1px);
     }
 
     /* 禁用态按钮 */
@@ -159,24 +199,24 @@ st.markdown("""
 
     /* 侧边栏 */
     [data-testid="stSidebar"] {
-        background-color: #F3F4F6;
-        border-right: 1px solid #E5E7EB;
+        background-color: var(--gray-100);
+        border-right: 1px solid var(--gray-200);
     }
-    
+
     /* 标签页 */
     .stTabs button {
         font-size: 14px;
         font-weight: 500;
-        color: #6B7280;
+        color: var(--gray-500);
     }
     .stTabs button[aria-selected="true"] {
-        color: #111827 !important;
-        border-bottom-color: #111827 !important;
+        color: var(--primary) !important;
+        border-bottom-color: var(--primary) !important;
     }
 
     /* 分割线 */
     .stDivider {
-        border-bottom-color: #E5E7EB;
+        border-bottom-color: var(--gray-200);
         margin-top: 2rem;
         margin-bottom: 2rem;
     }
@@ -184,12 +224,14 @@ st.markdown("""
     /* 上传区优化 */
     .stFileUploader label[data-testid="stFileUploaderDropzone"] {
         background: #FFFFFF;
-        border: 1px dashed #D1D5DB;
-        border-radius: 12px;
+        border: 2px dashed var(--gray-300);
+        border-radius: var(--radius-lg);
         transition: border-color 0.2s ease;
+        padding: 2rem;
     }
     .stFileUploader label[data-testid="stFileUploaderDropzone"]:hover {
-        border-color: #0F172A;
+        border-color: var(--accent);
+        background: rgba(16, 185, 129, 0.02);
     }
 
     /* 隐藏默认头部 */
@@ -197,56 +239,81 @@ st.markdown("""
         display: none !important;
     }
 
-    /* ==================== 进度条系统 ==================== */
-    .progress-container {
+    /* ==================== 数据表格美化 ==================== */
+    .stDataFrame {
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+    }
+    .stDataFrame thead th {
+        background: var(--gray-50);
+        font-weight: 600;
+        color: var(--gray-700);
+        border-bottom: 2px solid var(--gray-200);
+    }
+    .stDataFrame tbody tr:hover {
+        background: var(--gray-50);
+    }
+
+    /* ==================== 徽章系统 ==================== */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 9999px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    .badge-success { background: #D1FAE5; color: #065F46; }
+    .badge-warning { background: #FEF3C7; color: #92400E; }
+    .badge-error { background: #FEE2E2; color: #991B1B; }
+    .badge-info { background: #DBEAFE; color: #1E40AF; }
+
+    /* ==================== 步骤指示器 ==================== */
+    .steps-container {
+        display: flex;
+        align-items: center;
         background: #FFFFFF;
-        border: 1px solid #E5E7EB;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 2rem;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
-    }
-
-    .progress-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #0F172A;
-        margin-bottom: 1rem;
-    }
-
-    .progress-stages {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 0.5rem;
-    }
-
-    .progress-stage {
-        text-align: center;
-        flex: 1;
-        padding: 0.5rem;
-        font-size: 13px;
-        color: #6B7280;
-        transition: all 0.3s ease;
-    }
-
-    .progress-stage.active {
-        color: #0F172A;
-        font-weight: 600;
-    }
-
-    .progress-stage.completed {
-        color: #10B981;
-    }
-
-    /* ==================== 状态徽章系统 ==================== */
-    .status-bar {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius-lg);
+        padding: 12px 16px;
         margin-bottom: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
-
-    .status-badge {
+    .step {
+        display: flex;
+        align-items: center;
+        flex: 1;
+    }
+    .step-number {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        margin-right: 8px;
+    }
+    .step.completed .step-number { background: var(--accent); color: white; }
+    .step.current .step-number { background: var(--primary); color: white; }
+    .step.pending .step-number { background: var(--gray-200); color: var(--gray-500); }
+    .step-text {
+        font-size: 14px;
+        color: var(--gray-600);
+    }
+    .step.completed .step-text, .step.current .step-text {
+        color: var(--gray-900);
+        font-weight: 500;
+    }
+    .step-line {
+        flex: 1;
+        height: 2px;
+        background: var(--gray-200);
+        margin: 0 12px;
+    }
+    .step.completed + .step-line { background: var(--accent); }
         display: inline-flex;
         align-items: center;
         padding: 0.375rem 0.75rem;
