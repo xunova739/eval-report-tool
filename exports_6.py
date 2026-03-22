@@ -488,3 +488,255 @@ class ExportService:
             })
 
         return pd.DataFrame(rows)
+
+    def export_all_to_zip(
+        self,
+        stats_result: Dict,
+        report_markdown: str,
+        badcase_df: Optional[pd.DataFrame],
+        goodcase_df: Optional[pd.DataFrame],
+        is_comparison: bool = False,
+        project_name: str = "标注评测报告"
+    ) -> bytes:
+        """
+        [exports_6-001-16] 一键导出完整报告包
+        将统计结果、评测报告、Case 筛选结果打包为 ZIP
+
+        Args:
+            stats_result: 统计结果字典
+            report_markdown: Markdown 格式的评测报告
+            badcase_df: Bad Case 筛选结果（可选）
+            goodcase_df: Good Case 筛选结果（可选）
+            is_comparison: 是否对比模式
+            project_name: 项目名称
+
+        Returns:
+            bytes: ZIP 文件的二进制数据
+        """
+        import zipfile
+        import io
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # 1. 评测报告 Word
+            if report_markdown:
+                doc = Document()
+                style = doc.styles['Normal']
+                style.font.name = 'Microsoft YaHei'
+                style._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
+                style.font.size = Pt(11)
+
+                # 标题
+                title = doc.add_heading(project_name, 0)
+                title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in title.runs:
+                    run.font.size = Pt(22)
+                    run.font.color.rgb = RGBColor(0x1d, 0x6f, 0x64)
+
+                # 生成时间
+                time_para = doc.add_paragraph()
+                time_run = time_para.add_run(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                time_run.font.size = Pt(10)
+                time_run.font.color.rgb = RGBColor(0x75, 0x75, 0x75)
+                time_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                doc.add_paragraph()
+
+                # 统计概览
+                doc.add_heading("统计概览", 1)
+                if is_comparison:
+                    para = doc.add_paragraph()
+                    para.add_run("对比字段：").bold = True
+                    para.add_run(f"{stats_result.get('compare_field', '-')}")
+                    para = doc.add_paragraph()
+                    para.add_run(f"版本 A ({stats_result.get('version_a', '-')}): ").bold = True
+                    para.add_run(f"{stats_result.get('denominator_count_a', 0)} 条")
+                    para = doc.add_paragraph()
+                    para.add_run(f"版本 B ({stats_result.get('version_b', '-')}): ").bold = True
+                    para.add_run(f"{stats_result.get('denominator_count_b', 0)} 条")
+                else:
+                    para = doc.add_paragraph()
+                    para.add_run("公共分母：").bold = True
+                    para.add_run(f"{stats_result.get('denominator_count', 0)} 条")
+
+                doc.add_paragraph()
+                doc.add_heading("指标统计表", 1)
+
+                # 统计表格
+                results = stats_result.get("results", [])
+                if is_comparison:
+                    table = doc.add_table(rows=len(results) + 1, cols=7)
+                    table.style = 'Table Grid'
+                    headers = ["指标名称", "版本A分子", "版本A分母", "版本A%", "版本B分子", "版本B分母", "版本B%"]
+                    for i, h in enumerate(headers):
+                        cell = table.rows[0].cells[i]
+                        cell.text = h
+                        set_cell_shading(cell, "1d6f64")
+                        for para in cell.paragraphs:
+                            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            for run in para.runs:
+                                run.font.color.rgb = RGBColor(255, 255, 255)
+                                run.bold = True
+                    for row_idx, r in enumerate(results):
+                        row = table.rows[row_idx + 1]
+                        row.cells[0].text = str(r.get("name", ""))
+                        row.cells[1].text = str(r.get("numerator_a", 0))
+                        row.cells[2].text = str(r.get("denominator_a", 0))
+                        row.cells[3].text = f"{r.get('percentage_a')}%" if r.get('percentage_a') is not None else "N/A"
+                        row.cells[4].text = str(r.get("numerator_b", 0))
+                        row.cells[5].text = str(r.get("denominator_b", 0))
+                        row.cells[6].text = f"{r.get('percentage_b')}%" if r.get('percentage_b') is not None else "N/A"
+                else:
+                    table = doc.add_table(rows=len(results) + 1, cols=4)
+                    table.style = 'Table Grid'
+                    headers = ["指标名称", "分子", "分母", "百分比"]
+                    for i, h in enumerate(headers):
+                        cell = table.rows[0].cells[i]
+                        cell.text = h
+                        set_cell_shading(cell, "1d6f64")
+                        for para in cell.paragraphs:
+                            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            for run in para.runs:
+                                run.font.color.rgb = RGBColor(255, 255, 255)
+                                run.bold = True
+                    for row_idx, r in enumerate(results):
+                        row = table.rows[row_idx + 1]
+                        pct = r.get("percentage")
+                        row.cells[0].text = str(r.get("name", ""))
+                        row.cells[1].text = str(r.get("numerator", 0))
+                        row.cells[2].text = str(r.get("denominator", 0))
+                        row.cells[3].text = f"{pct}%" if pct is not None else "N/A"
+
+                doc.add_paragraph()
+                doc.add_heading("评测报告", 1)
+                _add_markdown_to_doc(doc, report_markdown)
+
+                # 保存到 ZIP
+                doc_buffer = io.BytesIO()
+                doc.save(doc_buffer)
+                doc_buffer.seek(0)
+                zf.writestr(f"评测报告_{timestamp}.docx", doc_buffer.read())
+
+            # 2. 统计结果 Excel
+            stats_df = self._format_stats_for_excel(stats_result)
+            excel_buffer = io.BytesIO()
+            stats_df.to_excel(excel_buffer, index=False, engine='openpyxl')
+            excel_buffer.seek(0)
+            zf.writestr(f"统计结果_{timestamp}.xlsx", excel_buffer.read())
+
+            # 3. Bad Case Excel
+            if badcase_df is not None and not badcase_df.empty:
+                badcase_buffer = io.BytesIO()
+                badcase_df.to_excel(badcase_buffer, index=False, engine='openpyxl')
+                badcase_buffer.seek(0)
+                zf.writestr(f"BadCase_{timestamp}.xlsx", badcase_buffer.read())
+
+            # 4. Good Case Excel
+            if goodcase_df is not None and not goodcase_df.empty:
+                goodcase_buffer = io.BytesIO()
+                goodcase_df.to_excel(goodcase_buffer, index=False, engine='openpyxl')
+                goodcase_buffer.seek(0)
+                zf.writestr(f"GoodCase_{timestamp}.xlsx", goodcase_buffer.read())
+
+        zip_buffer.seek(0)
+        return zip_buffer.read()
+
+    def generate_full_markdown(
+        self,
+        stats_result: Dict,
+        report_markdown: str,
+        badcase_df: Optional[pd.DataFrame],
+        goodcase_df: Optional[pd.DataFrame],
+        is_comparison: bool = False
+    ) -> str:
+        """
+        [exports_6-001-17] 生成完整 Markdown 文档
+        包含统计表格、评测报告、Case 筛选结果
+        可直接复制到钉钉文档
+
+        Args:
+            stats_result: 统计结果字典
+            report_markdown: 评测报告正文
+            badcase_df: Bad Case 数据（可选）
+            goodcase_df: Good Case 数据（可选）
+            is_comparison: 是否对比模式
+
+        Returns:
+            str: 完整的 Markdown 文本
+        """
+        lines = []
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # 标题
+        lines.append("# 标注评测报告")
+        lines.append(f"\n> 生成时间：{timestamp}\n")
+
+        # 统计概览
+        lines.append("## 一、统计概览\n")
+        if is_comparison:
+            lines.append(f"- **对比字段**：{stats_result.get('compare_field', '-')}")
+            lines.append(f"- **版本 A**（{stats_result.get('version_a', '-')}）：{stats_result.get('denominator_count_a', 0)} 条")
+            lines.append(f"- **版本 B**（{stats_result.get('version_b', '-')}）：{stats_result.get('denominator_count_b', 0)} 条")
+        else:
+            lines.append(f"- **公共分母**：{stats_result.get('denominator_count', 0)} 条")
+        lines.append("")
+
+        # 统计表格
+        lines.append("## 二、指标统计表\n")
+        results = stats_result.get("results", [])
+
+        if is_comparison:
+            lines.append("| 指标名称 | 版本A分子 | 版本A分母 | 版本A% | 版本B分子 | 版本B分母 | 版本B% | Gap |")
+            lines.append("|----------|-----------|-----------|--------|-----------|-----------|--------|------|")
+            for r in results:
+                gap = r.get("gap")
+                gap_str = f"{gap}%" if gap is not None else "-"
+                lines.append(f"| {r.get('name', '')} | {r.get('numerator_a', 0)} | {r.get('denominator_a', 0)} | {r.get('percentage_a', 'N/A')}% | {r.get('numerator_b', 0)} | {r.get('denominator_b', 0)} | {r.get('percentage_b', 'N/A')}% | {gap_str} |")
+        else:
+            lines.append("| 指标名称 | 分子 | 分母 | 百分比 |")
+            lines.append("|----------|------|------|--------|")
+            for r in results:
+                pct = r.get("percentage")
+                if pct is not None:
+                    lines.append(f"| {r.get('name', '')} | {r.get('numerator', 0)} | {r.get('denominator', 0)} | {pct}% |")
+                else:
+                    lines.append(f"| {r.get('name', '')} | {r.get('numerator', 0)} | {r.get('denominator', 0)} | N/A |")
+        lines.append("")
+
+        # 评测报告正文
+        if report_markdown:
+            lines.append("## 三、评测报告分析\n")
+            lines.append(report_markdown)
+            lines.append("")
+
+        # Case 筛选结果
+        has_case = (badcase_df is not None and not badcase_df.empty) or (goodcase_df is not None and not goodcase_df.empty)
+        if has_case:
+            lines.append("## 四、Case 筛选结果\n")
+
+            if badcase_df is not None and not badcase_df.empty:
+                lines.append(f"### 问题案例（Bad Case）\n")
+                lines.append(f"> 共 {len(badcase_df)} 条\n")
+                preview = badcase_df.head(10)
+                cols = list(preview.columns)[:6]
+                lines.append("| " + " | ".join(cols) + " |")
+                lines.append("| " + " | ".join(["---"] * len(cols)) + " |")
+                for _, row in preview.iterrows():
+                    vals = [str(row.get(c, ""))[:20] for c in cols]
+                    lines.append("| " + " | ".join(vals) + " |")
+                lines.append("")
+
+            if goodcase_df is not None and not goodcase_df.empty:
+                lines.append(f"### 优质案例（Good Case）\n")
+                lines.append(f"> 共 {len(goodcase_df)} 条\n")
+                preview = goodcase_df.head(10)
+                cols = list(preview.columns)[:6]
+                lines.append("| " + " | ".join(cols) + " |")
+                lines.append("| " + " | ".join(["---"] * len(cols)) + " |")
+                for _, row in preview.iterrows():
+                    vals = [str(row.get(c, ""))[:20] for c in cols]
+                    lines.append("| " + " | ".join(vals) + " |")
+                lines.append("")
+
+        return "\n".join(lines)

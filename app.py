@@ -772,6 +772,11 @@ def init_session_state():
         st.session_state["badcase_result"] = None
     if "goodcase_result" not in st.session_state:
         st.session_state["goodcase_result"] = None
+    # 保存的 Case 筛选结果（用于一键导出）
+    if "saved_badcase_df" not in st.session_state:
+        st.session_state["saved_badcase_df"] = None
+    if "saved_goodcase_df" not in st.session_state:
+        st.session_state["saved_goodcase_df"] = None
 
 
 def validate_session_keys():
@@ -1758,9 +1763,24 @@ def render_case_filter_tab(df, case_type: str, conditions_key: str, result_key: 
         # 导出按钮
         st.divider()
 
-        col1, col2 = st.columns([1, 3])
+        col1, col2, col3 = st.columns([1, 1, 2])
 
         with col1:
+            # 保存按钮
+            saved_key = f"saved_{case_type}_df"
+            is_saved = st.session_state.get(saved_key) is not None
+
+            if st.button(
+                "✓ 已保存" if is_saved else "保存结果",
+                key=f"save_{case_type}_btn",
+                use_container_width=True,
+                type="primary" if is_saved else "secondary"
+            ):
+                st.session_state[saved_key] = result_df.copy()
+                st.success(f"已保存 {filtered_count} 条 {case_type} 结果")
+                st.rerun()
+
+        with col2:
             with st.spinner("处理中..."):
                 export_path = ExportService().export_filtered_cases_to_excel(
                     result_df,
@@ -1770,13 +1790,19 @@ def render_case_filter_tab(df, case_type: str, conditions_key: str, result_key: 
 
             with open(export_path, "rb") as f:
                 st.download_button(
-                    label=f"导出为Excel（{filtered_count}条）",
+                    label=f"导出Excel（{filtered_count}条）",
                     data=f,
                     file_name=f"{case_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                     key=f"export_{case_type}_btn"
                 )
+
+        with col3:
+            if is_saved:
+                st.caption(f"✓ 已保存 {len(st.session_state[saved_key])} 条，可继续筛选其他条件")
+            else:
+                st.caption("点击「保存结果」后可继续筛选其他 Case")
 
     elif result_df is not None and result_df.empty:
         st.warning("没有符合条件的数据")
@@ -3257,6 +3283,104 @@ function copyText() {{
                     "goodcase_conditions",
                     "goodcase_result"
                 )
+
+            # ==================== 一键导出全部 ====================
+            st.divider()
+            st.subheader("11. 一键导出")
+
+            saved_badcase = st.session_state.get("saved_badcase_df")
+            saved_goodcase = st.session_state.get("saved_goodcase_df")
+            has_report = bool(st.session_state.get("generated_report", "").strip())
+
+            # 显示已保存的内容
+            saved_items = []
+            if has_report:
+                saved_items.append("✓ 评测报告")
+            if saved_badcase is not None and not saved_badcase.empty:
+                saved_items.append(f"✓ Bad Case ({len(saved_badcase)}条)")
+            if saved_goodcase is not None and not saved_goodcase.empty:
+                saved_items.append(f"✓ Good Case ({len(saved_goodcase)}条)")
+
+            if saved_items:
+                st.info("已准备导出：" + " | ".join(saved_items))
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    # 导出 Markdown（可复制到钉钉）
+                    try:
+                        full_md = ExportService().generate_full_markdown(
+                            stats_result=stats_result,
+                            report_markdown=st.session_state.get("generated_report", ""),
+                            badcase_df=saved_badcase,
+                            goodcase_df=saved_goodcase,
+                            is_comparison=is_comparison
+                        )
+                        st.download_button(
+                            label="📄 导出 Markdown（钉钉文档）",
+                            data=full_md,
+                            file_name=f"评测报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                            mime="text/markdown",
+                            use_container_width=True,
+                            type="primary",
+                            key="download_md_full_btn"
+                        )
+                    except Exception as e:
+                        st.error(f"生成失败: {str(e)}")
+
+                with col2:
+                    # 导出统计表 Excel
+                    try:
+                        stats_df = ExportService()._format_stats_for_excel(stats_result)
+                        excel_buffer = io.BytesIO()
+                        stats_df.to_excel(excel_buffer, index=False, engine='openpyxl')
+                        excel_buffer.seek(0)
+                        st.download_button(
+                            label="📊 导出统计表 Excel",
+                            data=excel_buffer,
+                            file_name=f"统计结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="download_stats_excel_btn"
+                        )
+                    except Exception as e:
+                        st.error(f"导出失败: {str(e)}")
+
+                # Case 数据单独导出
+                if (saved_badcase is not None and not saved_badcase.empty) or (saved_goodcase is not None and not saved_goodcase.empty):
+                    st.markdown("**Case 数据导出**")
+                    case_col1, case_col2 = st.columns(2)
+
+                    with case_col1:
+                        if saved_badcase is not None and not saved_badcase.empty:
+                            badcase_buffer = io.BytesIO()
+                            saved_badcase.to_excel(badcase_buffer, index=False, engine='openpyxl')
+                            badcase_buffer.seek(0)
+                            st.download_button(
+                                label=f"❌ Bad Case ({len(saved_badcase)}条)",
+                                data=badcase_buffer,
+                                file_name=f"BadCase_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="download_saved_badcase_btn"
+                            )
+
+                    with case_col2:
+                        if saved_goodcase is not None and not saved_goodcase.empty:
+                            goodcase_buffer = io.BytesIO()
+                            saved_goodcase.to_excel(goodcase_buffer, index=False, engine='openpyxl')
+                            goodcase_buffer.seek(0)
+                            st.download_button(
+                                label=f"✅ Good Case ({len(saved_goodcase)}条)",
+                                data=goodcase_buffer,
+                                file_name=f"GoodCase_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="download_saved_goodcase_btn"
+                            )
+            else:
+                st.warning("请先生成评测报告或在 Case 筛选中保存结果")
+                st.caption("提示：在 Case 筛选中点击「保存结果」后可在此一键导出")
 
     except Exception as e:
         st.error(f"文件读取失败: {str(e)}")
