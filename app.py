@@ -218,8 +218,9 @@ st.markdown("""
         color: var(--error) !important;
         background: rgba(239, 68, 68, 0.05) !important;
     }
-    /* 通过定位特定宽度比例的列末尾来精准打击删除按钮（条件编辑器与分组维度） */
-    div[data-testid="column"]:nth-child(4):last-child .stButton button {
+    /* 通过定位特定宽度比例的列末尾来精准打击删除按钮（仅限指标编辑区域） */
+    /* 使用 .metrics-editor 类限定范围，避免影响报告区域 */
+    .metrics-editor div[data-testid="column"]:nth-child(4):last-child .stButton button {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
@@ -235,7 +236,7 @@ st.markdown("""
         transition: all 0.2s ease !important;
         margin-top: 0px !important;
     }
-    div[data-testid="column"]:nth-child(4):last-child .stButton button:hover {
+    .metrics-editor div[data-testid="column"]:nth-child(4):last-child .stButton button:hover {
         color: var(--error) !important;
         background: rgba(239, 68, 68, 0.08) !important;
         border-radius: 8px !important;
@@ -792,7 +793,9 @@ def render_copy_markdown_button(
     disabled: bool = False,
     button_type: str = "secondary"
 ):
-    import json
+    """渲染复制按钮，点击后显示可复制的文本区域"""
+    import streamlit.components.v1 as components
+
     if st.button(
         label,
         key=key,
@@ -800,11 +803,16 @@ def render_copy_markdown_button(
         disabled=disabled,
         type=button_type
     ):
-        st.write(
-            f'<script>navigator.clipboard.writeText({json.dumps(text or "")})</script>',
-            unsafe_allow_html=True
-        )
-        st.toast("已复制 Markdown")
+        # 使用 Session State 标记需要显示复制区域
+        st.session_state[f"{key}_show_copy"] = True
+
+    # 如果点击了按钮，显示可复制的文本区域
+    if st.session_state.get(f"{key}_show_copy", False):
+        st.info("请使用下方文本框右上角的复制按钮：")
+        st.code(text or "", language="markdown")
+        if st.button("关闭", key=f"{key}_close"):
+            st.session_state[f"{key}_show_copy"] = False
+            st.rerun()
 
 
 def get_cached_report_word_bytes(report_text: str, stats_result: dict, is_comparison: bool):
