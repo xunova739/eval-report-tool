@@ -108,45 +108,44 @@ _PARSE_COMMON_RULES = """
 - 字段分布里可能是 "L0xxx"、也可能是 "无问题"、"轻微"、"1分" 等任何形式——以实际值为准
 - 如果字段的 values 就是纯数字 "0"/"1"/"2"，则直接用数字作为 value
 
-**通过率场景中的括号标签处理（分两类字段，机械执行步骤，不需要推断）**
+**通过率场景中的括号标签处理（关键：判断是否有更高级别）**
 
-**categorical 单值字段**的 `(L0+L1)` 通过场景：
-- 步骤：去字段分布找 L0 对应的实际标签 + L1 对应的实际标签 → 生成 `in "[L0实际标签],[L1实际标签]"`
-- 例：字段值有"L0穿着问题","L1穿着问题","L2穿着问题"，口径`(L0+L1)` → `in "L0穿着问题,L1穿着问题"`
+**【极其重要】首先判断字段是否有"更高级别"：**
+- 字段选项如果有等级编号（L0/L1/L2/L3），级别从低到高是 L0 < L1 < L2 < L3
+- 口径说"允许L0+L1" = "不允许L2"（排除最高级别）
+- 口径说"允许L0+L1+L2" = "不允许L3"（排除最高级别）
 
-**categorical_with_multi 多选字段**的 `(L0+L1)` 通过场景（使用 OR 组结构）：
-1. 找出括号里允许的等级：如 `(L0+L1)` → L0、L1
-2. 去字段分布的 options 里，找 L0 对应的**完整选项名**、L1 对应的**完整选项名**
-3. **生成 OR 组结构**：`{{"type":"or_group","conditions":[...]}}`
-4. OR 组放在 numerator_conditions 中，和其他条件是 AND 关系；OR 组内部是 OR 关系
+**情况一：字段有更高级别 → 用 not_contains 排除最高级别**
 
-示例（字段 "上装服装问题" 有选项：L0上装还原问题, L1上装还原问题, L2上装还原问题）：
-- 括号内：L0、L1 → 完整名：L0上装还原问题、L1上装还原问题
-- ✅ 正确输出（放 numerator_conditions）：
+示例：服装还原问题字段有选项 L0xxx/L1xxx/L2xxx，口径是"服装还原问题(L0+L1)"
+- 括号里允许 L0 和 L1，隐含"不允许 L2"
+- ✅ 正确写法：`{{"field":"上装服装问题","op":"not_contains","value":"L2上装还原问题"}}`
+- ❌ 错误写法：OR组包含L0和L1（会错误匹配到"L2，L1"混合行）
+
+**情况二：字段没有更高级别 → 用 OR 组**
+
+示例：人/背景/服装整体问题字段，口径是"没有任何问题+L1级别问题"
+- 没有 L2 或更高级别，括号里的值就是全部允许值
+- ✅ 正确写法：
   ```json
   {{"type":"or_group","conditions":[
-    {{"field":"上装服装问题","op":"contains","value":"L0上装还原问题"}},
-    {{"field":"上装服装问题","op":"contains","value":"L1上装还原问题"}}
+    {{"field":"人/背景/服装整体问题","op":"contains","value":"没有以上任何问题"}},
+    {{"field":"人/背景/服装整体问题","op":"contains","value":"L1-身型轻微不还原"}}
   ]}}
   ```
-- ❌ 错误输出：两条独立的 contains 条件（会被当作 AND，永远不满足）
-- ❌ 错误输出：`in "L0上装还原问题,L1上装还原问题"` ← 不要用 in
-- ❌ 错误输出：`not_contains "L2上装还原问题"` ← 不用推理排除项
 
-**`(L0+L1+L2)` 三级通过场景**（同样生成 OR 组）：
-- ✅ 正确：`{{"type":"or_group","conditions":[包含L0, 包含L1, 包含L2]}}`
+**categorical 单值字段**的 `(L0+L1)` 通过场景：
+- 用 `in "L0实际值,L1实际值"` 放 numerator_conditions
 
-**关键口诀**：
-- categorical_with_multi 字段的括号多值 → 生成 OR 组结构 `{{"type":"or_group","conditions":[...]}}`
-- OR 组放在 numerator_conditions，和其他条件是 AND；OR 组内部是 OR
-- ❌ 不要把多个 contains 拆成独立条件（会被当作 AND，逻辑错误）
-- ❌ 不要用 `in` 运算符
-
-❌ 绝对禁止：只写等级前缀（如 value="L0"），必须写完整选项名（如 value="L0上装还原问题"）
-
-**categorical 单值字段 `(0+1)` 与 categorical_with_multi 字段 `(L0+L1)` 的区别**：
-- categorical 单值字段：用 `in "L0,L1"` 放 numerator_conditions
-- categorical_with_multi 多选字段：用 OR 组结构 `{{"type":"or_group","conditions":[...]}}` 放 numerator_conditions
+**完整示例：服装还原问题(L0+L1)**
+- 字段选项：L0上装还原问题, L1上装还原问题, L2上装还原问题（有更高级别L2）
+- 口径允许L0+L1 = 不允许L2
+- ✅ 正确：
+  ```json
+  {{"field":"上装服装问题","op":"not_contains","value":"L2上装还原问题"}},
+  {{"field":"下装服装问题","op":"not_contains","value":"L2下装还原问题"}}
+  ```
+- ❌ 错误：OR组包含L0和L1（会错误匹配到"L2，L1"混合行）
 
 
 **加号分隔的多条件公式（整体通过率场景 - 极其重要）**
