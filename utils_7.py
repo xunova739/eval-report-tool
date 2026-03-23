@@ -38,12 +38,18 @@ def format_stats_result_for_display(
             trend = r.get("trend", "")
 
             trend_symbol = ""
+            winner = ""
             if trend == "improved":
                 trend_symbol = "↑"
+                winner = "右边好"
             elif trend == "declined":
                 trend_symbol = "↓"
+                winner = "左边好"
             elif trend == "unchanged":
                 trend_symbol = "→"
+                winner = "平局"
+            else:
+                winner = "-"
 
             rows.append({
                 "指标名称": r.get("name", ""),
@@ -54,7 +60,8 @@ def format_stats_result_for_display(
                 "版本 B 分母": r.get("denominator_b", 0),
                 "版本 B(%)": r.get("percentage_b"),
                 "Gap(%)": gap,
-                "趋势": trend_symbol
+                "趋势": trend_symbol,
+                "胜者": winner
             })
 
         return pd.DataFrame(rows)

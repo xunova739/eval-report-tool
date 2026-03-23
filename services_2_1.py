@@ -201,19 +201,36 @@ class DataService:
                 str_series = series.astype(str)
                 raw_values = str_series.tolist()
 
-                # 检测是否有任何值含逗号或顿号
+                # 检测是否为多选字段：JSON 数组格式或逗号/顿号分隔
+                import json
+                has_json_array = any(str(v).strip().startswith('[') for v in raw_values)
                 sep_pattern = re.compile(r'[,，、]')
                 has_sep = any(sep_pattern.search(v) for v in raw_values)
 
-                if has_sep:
-                    # 拆分后统计独立选项
+                if has_json_array or has_sep:
+                    # 拆分后统计独立选项（优先 JSON 解析）
                     all_options = []
                     for v in raw_values:
-                        parts = sep_pattern.split(v)
+                        v_str = str(v).strip()
+
+                        # 优先尝试 JSON 数组解析
+                        if v_str.startswith('[') and v_str.endswith(']'):
+                            try:
+                                parsed = json.loads(v_str)
+                                if isinstance(parsed, list):
+                                    all_options.extend([str(p).strip() for p in parsed if p])
+                                    continue
+                            except (json.JSONDecodeError, ValueError):
+                                pass  # 降级到逗号分隔
+
+                        # 降级：逗号/顿号拆分
+                        parts = sep_pattern.split(v_str)
                         all_options.extend([p.strip() for p in parts if p.strip()])
+
                     option_counts = {}
                     for opt in all_options:
                         option_counts[opt] = option_counts.get(opt, 0) + 1
+
                     result[col] = {
                         "type": "categorical_with_multi",
                         "options": sorted(option_counts.keys()),
