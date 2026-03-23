@@ -114,38 +114,39 @@ _PARSE_COMMON_RULES = """
 - 步骤：去字段分布找 L0 对应的实际标签 + L1 对应的实际标签 → 生成 `in "[L0实际标签],[L1实际标签]"`
 - 例：字段值有"L0穿着问题","L1穿着问题","L2穿着问题"，口径`(L0+L1)` → `in "L0穿着问题,L1穿着问题"`
 
-**categorical_with_multi 多选字段**的 `(L0+L1)` 通过场景（拆成多条 contains，放 numerator_or_conditions）：
+**categorical_with_multi 多选字段**的 `(L0+L1)` 通过场景（使用 OR 组结构）：
 1. 找出括号里允许的等级：如 `(L0+L1)` → L0、L1
 2. 去字段分布的 options 里，找 L0 对应的**完整选项名**、L1 对应的**完整选项名**
-3. **每个等级生成一条独立的 contains 条件，全部放入 numerator_or_conditions**
-4. 组间 OR：只要包含其中任意一个等级就通过
+3. **生成 OR 组结构**：`{"type":"or_group","conditions":[...]}`
+4. OR 组放在 numerator_conditions 中，和其他条件是 AND 关系；OR 组内部是 OR 关系
 
 示例（字段 "上装服装问题" 有选项：L0上装还原问题, L1上装还原问题, L2上装还原问题）：
 - 括号内：L0、L1 → 完整名：L0上装还原问题、L1上装还原问题
-- ✅ 正确输出（放 numerator_or_conditions）：
+- ✅ 正确输出（放 numerator_conditions）：
+  ```json
+  {"type":"or_group","conditions":[
+    {"field":"上装服装问题","op":"contains","value":"L0上装还原问题"},
+    {"field":"上装服装问题","op":"contains","value":"L1上装还原问题"}
+  ]}
   ```
-  "numerator_or_conditions": [
-    [{{"field":"上装服装问题","op":"contains","value":"L0上装还原问题"}}],
-    [{{"field":"上装服装问题","op":"contains","value":"L1上装还原问题"}}]
-  ],
-  "numerator_logic": "or"
-  ```
-- ❌ 错误输出：`in "L0上装还原问题,L1上装还原问题"` ← 不要用 in，要拆开
-- ❌ 错误输出：`not_contains "L2上装还原问题"` ← 不用推理排除项，直接写允许的
+- ❌ 错误输出：两条独立的 contains 条件（会被当作 AND，永远不满足）
+- ❌ 错误输出：`in "L0上装还原问题,L1上装还原问题"` ← 不要用 in
+- ❌ 错误输出：`not_contains "L2上装还原问题"` ← 不用推理排除项
 
-**`(L0+L1+L2)` 三级通过场景**（同样拆成三条 contains）：
-- ✅ 正确：每个等级一条 contains，放 numerator_or_conditions
+**`(L0+L1+L2)` 三级通过场景**（同样生成 OR 组）：
+- ✅ 正确：`{"type":"or_group","conditions":[包含L0, 包含L1, 包含L2]}`
 
 **关键口诀**：
-- 括号里写了哪些等级 → 每个等级单独一条 contains → 全部放 numerator_or_conditions → 组间 OR
-- ❌ 不要用 `in` 运算符，必须拆成独立的 `contains` 条件
+- categorical_with_multi 字段的括号多值 → 生成 OR 组结构 `{"type":"or_group","conditions":[...]}`
+- OR 组放在 numerator_conditions，和其他条件是 AND；OR 组内部是 OR
+- ❌ 不要把多个 contains 拆成独立条件（会被当作 AND，逻辑错误）
+- ❌ 不要用 `in` 运算符
 
 ❌ 绝对禁止：只写等级前缀（如 value="L0"），必须写完整选项名（如 value="L0上装还原问题"）
-❌ 绝对禁止：用 `in "L0xxx,L1xxx"` 这种写法，必须拆开
 
 **categorical 单值字段 `(0+1)` 与 categorical_with_multi 字段 `(L0+L1)` 的区别**：
 - categorical 单值字段：用 `in "L0,L1"` 放 numerator_conditions
-- categorical_with_multi 多选字段：拆成多条 contains 放 numerator_or_conditions
+- categorical_with_multi 多选字段：用 OR 组结构 `{"type":"or_group","conditions":[...]}` 放 numerator_conditions
 
 
 **加号分隔的多条件公式（整体通过率场景 - 极其重要）**
@@ -321,7 +322,12 @@ _PARSE_OUTPUT_SCHEMA = """
     {{
       "name": "指标名称",
       "numerator_conditions": [
-        {{"field": "字段名", "op": "运算符", "value": "值"}}
+        {{"field": "字段名", "op": "运算符", "value": "值"}},
+        // OR 组结构示例（用于 categorical_with_multi 字段的多值场景）：
+        {{"type": "or_group", "conditions": [
+          {{"field": "字段名", "op": "contains", "value": "值1"}},
+          {{"field": "字段名", "op": "contains", "value": "值2"}}
+        ]}}
       ],
       "numerator_or_conditions": [],
       "numerator_logic": "and",
@@ -345,17 +351,13 @@ _PARSE_OUTPUT_SCHEMA = """
 
 说明：
 - common_denominator.type：分母类型，"all"表示全部数据（conditions 留空），"custom"表示有过滤条件（conditions 非空）
-- numerator_conditions：AND 条件列表，所有条件同时满足
-- numerator_or_conditions：OR 条件组列表，每组内部 AND，组间 OR。例如"上装 L2 或下装 L2"：
-  [
-    [{{"field": "字段 A", "op": "contains", "value": "目标值"}}],
-    [{{"field": "字段 B", "op": "contains", "value": "目标值"}}]
-  ]
-- 两者可同时使用：先满足 OR 条件组，再满足 AND 条件
-- numerator_logic：必须与实际使用的条件类型一致
-  - 使用了 numerator_or_conditions（非空）→ 必须填 "or"
-  - 只使用了 numerator_conditions（且 numerator_or_conditions 为空）→ 必须填 "and"
-  - 混用两者时 → 必须填 "or"（先 OR，再 AND 过滤）
+- numerator_conditions：条件列表，支持两种类型：
+  1. 普通条件：{{"field":"字段名","op":"运算符","value":"值"}} —— 所有普通条件之间是 AND 关系
+  2. OR组条件：{{"type":"or_group","conditions":[条件1, 条件2, ...]}} —— 组内是 OR 关系，和其他条件是 AND 关系
+     - 用于表达"字段内部OR，字段之间AND"的组合逻辑
+     - 例：上装服装问题是L0或L1（字段内OR），同时下装服装问题也是L0或L1（字段内OR），这两个OR组之间是AND
+- numerator_or_conditions：OR 条件组列表（旧格式，不推荐使用）
+- numerator_logic：使用 numerator_conditions（包含OR组）时，填 "and"
 
 confidence 评分规则：
 - 95-100：字段名完全匹配，值也完全匹配
