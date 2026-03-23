@@ -388,10 +388,6 @@ class DataService:
         [SVC-D-001-41] 应用多个条件（AND 逻辑）
         筛选 DataFrame，所有条件必须同时满足
 
-        支持条件类型：
-        1. 普通条件：{"field":"xxx","op":"==","value":"yyy"}
-        2. OR组条件：{"type":"or_group","conditions":[条件1, 条件2, ...]}  # 组内OR
-
         Args:
             conditions: 条件列表
             df: 可选的 DataFrame，默认使用 self.df
@@ -409,19 +405,8 @@ class DataService:
         mask = pd.Series([True] * len(df), index=df.index)
 
         for condition in conditions:
-            # 检测是否为 OR 组条件
-            if isinstance(condition, dict) and condition.get("type") == "or_group":
-                # OR 组：组内条件之间是 OR 关系
-                or_conditions = condition.get("conditions", [])
-                or_mask = pd.Series([False] * len(df), index=df.index)
-                for cond in or_conditions:
-                    cond_mask = self.apply_condition(df, cond)
-                    or_mask = or_mask | cond_mask  # 组内 OR
-                mask = mask & or_mask  # 和主条件 AND
-            else:
-                # 普通条件：直接 AND
-                cond_mask = self.apply_condition(df, condition)
-                mask = mask & cond_mask
+            cond_mask = self.apply_condition(df, condition)
+            mask = mask & cond_mask
 
         return df[mask].reset_index(drop=True)
 
