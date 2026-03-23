@@ -962,10 +962,11 @@ def auto_fix_operators(parsed_config: dict, df) -> dict:
         op = cond.get("op", "")
         info = field_dist.get(field, {})
         if info.get("type") == "categorical_with_multi":
-            if op in ("in", "=="):
+            if op == "==":
                 cond["op"] = "contains"
-            elif op in ("not_in", "!="):
+            elif op == "!=":
                 cond["op"] = "not_contains"
+            # NOTE: 不转换 in/not_in — in 运算符已内置子串匹配，可安全用于多选字段的允许值列表
 
     # 修正公共分母
     for cond in parsed_config.get("common_denominator", {}).get("conditions", []):
@@ -1003,6 +1004,9 @@ def auto_fix_values(parsed_config, df):
         op = cond.get("op", "")
         val = cond.get("value", "")
         if op in ("is_empty", "is_not_empty") or not val:
+            return
+        # contains/not_contains 是子串匹配，允许前缀写法（如 "L2"），不做模糊替换
+        if op in ("contains", "not_contains"):
             return
         info = field_dist.get(field, {})
         valid = get_valid_values(info)
@@ -1160,6 +1164,227 @@ def migrate_or_conditions_to_flat(parsed_config: dict) -> dict:
                 flat.extend(group)
             metric["numerator_conditions"] = flat
             metric["numerator_or_conditions"] = []
+    return parsed_config
+
+
+def auto_fix_deduplicate(parsed_config: dict) -> dict:
+    """去除指标条件中完全重复的条件（field+op+value 三者相同只保留一条）"""
+    def dedup(conds):
+        seen = set()
+        result = []
+        for c in conds:
+            key = (c.get("field", ""), c.get("op", ""), c.get("value", ""))
+            if key not in seen:
+                seen.add(key)
+                result.append(c)
+        return result
+
+    for metric in parsed_config.get("metrics", []):
+        metric["numerator_conditions"] = dedup(metric.get("numerator_conditions", []))
+        metric["numerator_or_conditions"] = [
+            dedup(group) for group in metric.get("numerator_or_conditions", [])
+        ]
+        metric["custom_denominator_conditions"] = dedup(metric.get("custom_denominator_conditions", []))
+
+    denom = parsed_config.get("common_denominator", {})
+    if "conditions" in denom:
+        denom["conditions"] = dedup(denom["conditions"])
+
+    return parsed_config
+
+
+def auto_fix_numerator_logic(parsed_config: dict) -> dict:
+    """修正 numerator_logic 与实际条件类型不匹配的问题
+
+    规则：numerator_or_conditions 非空时，numerator_logic 必须为 'or'
+    """
+    for metric in parsed_config.get("metrics", []):
+        or_groups = metric.get("numerator_or_conditions", [])
+        if or_groups and metric.get("numerator_logic", "and") != "or":
+            metric["numerator_logic"] = "or"
+    return parsed_config
+
+
+def auto_fix_level_from_mappings(parsed_config: dict, df) -> dict:
+    """用 field_mappings 里的高置信度等级信息修正 conditions 里的等级错误
+
+    AI 有时在 field_mappings 里正确识别出字段对应 L2，
+    但在生成具体 metrics 条件时却写了 L0 或 L1。
+    这里用 field_mappings 提取每个字段的"主导等级"，
+    对 conditions 里使用了更低等级的条件进行修正。
+    """
+    import re as _re
+    mappings = parsed_config.get("field_mappings", [])
+    if not mappings:
+        return parsed_config
+
+    field_dist = DataService(df).build_field_distribution()
+    valid_fields = set(df.columns.tolist())
+
+    # 从 field_mappings 中为每个字段提取最高置信度对应的 L 等级
+    field_dominant_level: Dict[str, int] = {}
+    for m in mappings:
+        if m.get("confidence", 0) < 85:
+            continue
+        field = m.get("field", "")
+        val = m.get("value", "")
+        if not field:
+            continue
+        # 跳过联合字段（如 "上装服装问题/下装服装问题"），但保留字段名本身含 "/" 的真实字段
+        if "/" in field and field not in valid_fields:
+            continue
+        levels = _re.findall(r'L(\d+)', str(val), _re.IGNORECASE)
+        if levels:
+            max_lvl = max(int(l) for l in levels)
+            if field not in field_dominant_level or max_lvl > field_dominant_level[field]:
+                field_dominant_level[field] = max_lvl
+
+    def fix_cond(cond: dict) -> None:
+        field = cond.get("field", "")
+        op = cond.get("op", "")
+        val = cond.get("value", "")
+        if op not in ("contains", "not_contains") or not val:
+            return
+        dominant = field_dominant_level.get(field)
+        if dominant is None:
+            return
+
+        level_m = _re.search(r'L(\d+)', str(val), _re.IGNORECASE)
+        if not level_m:
+            return
+        current_lvl = int(level_m.group(1))
+        if current_lvl >= dominant:
+            return  # 已经是正确等级，跳过
+
+        # 等级低于 field_mappings 的主导等级，进行修正
+        target_prefix = f"L{dominant}"
+        info = field_dist.get(field, {})
+        options = info.get("options", info.get("values", []))
+        candidates = [o for o in options if str(o).upper().startswith(target_prefix.upper())]
+        if len(candidates) == 1:
+            # 唯一匹配，用完整标签
+            cond["value"] = candidates[0]
+        elif len(candidates) > 1:
+            # 多个匹配，not_contains 用第一个完整标签，contains 也用第一个
+            cond["value"] = candidates[0]
+        else:
+            # 字段分布里找不到，保持原样不修改
+            return
+
+    for metric in parsed_config.get("metrics", []):
+        for cond in metric.get("numerator_conditions", []):
+            fix_cond(cond)
+        for group in metric.get("numerator_or_conditions", []):
+            for cond in group:
+                fix_cond(cond)
+        for cond in metric.get("custom_denominator_conditions", []):
+            fix_cond(cond)
+    for cond in parsed_config.get("common_denominator", {}).get("conditions", []):
+        fix_cond(cond)
+
+    return parsed_config
+
+
+def auto_fix_invalid_fields(parsed_config: dict, df) -> tuple:
+    """移除条件中不存在于数据的字段，返回 (修复后config, 警告列表)"""
+    valid_fields = set(df.columns.tolist())
+    warnings = []
+
+    def filter_conds(conds, metric_name):
+        result = []
+        for c in conds:
+            field = c.get("field", "")
+            if field and field not in valid_fields:
+                warnings.append(f"指标「{metric_name}」：字段「{field}」在数据中不存在，已自动移除")
+            else:
+                result.append(c)
+        return result
+
+    for metric in parsed_config.get("metrics", []):
+        name = metric.get("name", "")
+        metric["numerator_conditions"] = filter_conds(metric.get("numerator_conditions", []), name)
+        metric["numerator_or_conditions"] = [
+            filter_conds(g, name) for g in metric.get("numerator_or_conditions", [])
+        ]
+        metric["custom_denominator_conditions"] = filter_conds(metric.get("custom_denominator_conditions", []), name)
+
+    denom = parsed_config.get("common_denominator", {})
+    denom["conditions"] = filter_conds(denom.get("conditions", []), "公共分母")
+
+    return parsed_config, warnings
+
+
+def auto_fix_not_contains_collapse(parsed_config: dict, df) -> dict:
+    """修复 categorical_with_multi 字段在通过率场景中的两类错误：
+
+    错误1：AI 枚举多条同级 not_contains，如：
+      not_contains "L2-身型不还原" + not_contains "L2-异常扩图..."
+    → 合并为一条 not_contains "L2"
+
+    错误2：AI 用 contains "没有以上任何问题" 表达通过条件
+    → 应改为 not_contains 最高等级前缀（L2 等）
+      原因：contains "无问题值" 太严格，L1 轻微问题也会被错误排除
+    """
+    import re as _re
+    field_dist = DataService(df).build_field_distribution()
+
+    def _level_prefix(val: str):
+        m = _re.match(r'^(L\d+)', str(val), _re.IGNORECASE)
+        return m.group(1) if m else None
+
+    def _highest_level_prefix(options):
+        prefixes = set(filter(None, (_level_prefix(o) for o in options)))
+        if not prefixes:
+            return None
+        # 按数字排序，取最大的
+        try:
+            return max(prefixes, key=lambda p: int(_re.search(r'\d+', p).group()))
+        except Exception:
+            return max(prefixes)
+
+    _no_problem_keywords = ["没有以上", "无问题", "no problem", "无任何", "没有问题"]
+
+    def _is_no_problem_value(val: str) -> bool:
+        v = val.lower()
+        return any(kw in v for kw in _no_problem_keywords)
+
+    def collapse(conditions):
+        nc_groups = {}   # field -> [value, ...]
+        others = []
+        for cond in conditions:
+            field = cond.get("field", "")
+            info = field_dist.get(field, {})
+            op = cond.get("op", "")
+            val = cond.get("value", "")
+            if info.get("type") == "categorical_with_multi":
+                if op == "not_contains":
+                    nc_groups.setdefault(field, []).append(val)
+                    continue
+            others.append(cond)
+
+        result = list(others)
+        for field, vals in nc_groups.items():
+            options = field_dist.get(field, {}).get("options", [])
+            prefixes = set(filter(None, (_level_prefix(v) for v in vals)))
+
+            # 同字段 2+ 条且共享同一等级前缀 → AI 在枚举，合并为前缀
+            # 单条具体标签保留，可能是口径里明确指定的
+            if len(vals) >= 2 and len(prefixes) == 1:
+                prefix = list(prefixes)[0]
+                same_prefix_opts = [o for o in options if _level_prefix(o) == prefix]
+                if same_prefix_opts:
+                    result.append({"field": field, "op": "not_contains", "value": prefix})
+                    continue
+
+            # 单条或多个不同等级前缀：原样保留
+            for v in vals:
+                result.append({"field": field, "op": "not_contains", "value": v})
+
+        return result
+
+    for metric in parsed_config.get("metrics", []):
+        metric["numerator_conditions"] = collapse(metric.get("numerator_conditions", []))
+
     return parsed_config
 
 
@@ -1500,8 +1725,16 @@ def render_condition_editor(df, condition_list: list, prefix: str, columns: list
     while i < len(condition_list):
         condition = condition_list[i]
         with st.container():
-            col1, col2, col3, col4 = st.columns([3, 2, 3, 0.4])
-            with col4:
+            col1, col2, col3, col_del, col_copy = st.columns([3, 2, 3, 0.4, 0.4])
+            with col_copy:
+                st.button(
+                    "📋",
+                    key=f"{key_prefix}_copy_{i}",
+                    help="复制此条件",
+                    on_click=_cb_copy_cond,
+                    args=(dict(condition),)
+                )
+            with col_del:
                 if conditions_key:
                     st.button(
                         "×",
@@ -2062,14 +2295,60 @@ def _cb_add_case_cond(conditions_key):
     st.session_state[conditions_key] = conditions
 
 
+def _cb_clear_case_conds(conditions_key, result_key):
+    """Case筛选：清空所有条件和结果"""
+    st.session_state[conditions_key] = []
+    st.session_state[result_key] = None
+
+
 def _cb_delete_cond(condition_list_ref, index):
     """删除指定索引的条件"""
     if 0 <= index < len(condition_list_ref):
         condition_list_ref.pop(index)
 
 
-def _cb_clear_case_conds(conditions_key, result_key):
-    """清空条件"""
+def _cb_copy_cond(cond):
+    """复制条件到剪贴板"""
+    import copy
+    st.session_state["clipboard_condition"] = copy.deepcopy(cond)
+
+
+def _cb_paste_cond(metric_idx):
+    """将剪贴板条件粘贴到指定指标的分子条件"""
+    import copy
+    cond = st.session_state.get("clipboard_condition")
+    if not cond:
+        return
+    editing = st.session_state.get("editing_metrics", {})
+    metrics = editing.get("metrics", [])
+    if metric_idx < len(metrics):
+        conds = metrics[metric_idx].get("numerator_conditions", [])
+        conds.append(copy.deepcopy(cond))
+        metrics[metric_idx]["numerator_conditions"] = conds
+    st.session_state["editing_metrics"] = editing
+
+
+def _cb_add_batch_numer_conds(metric_idx: int, batch_key: str):
+    """批量添加多条分子条件（每个值对应一条）"""
+    import copy
+    field = st.session_state.get(f"{batch_key}_field", "")
+    op = st.session_state.get(f"{batch_key}_op", "contains")
+    vals = st.session_state.get(f"{batch_key}_vals", [])
+    if not field or not vals:
+        return
+    editing = st.session_state.get("editing_metrics", {})
+    metrics = editing.get("metrics", [])
+    if metric_idx < len(metrics):
+        conds = metrics[metric_idx].get("numerator_conditions", [])
+        for v in vals:
+            conds.append({"field": field, "op": op, "value": v})
+        metrics[metric_idx]["numerator_conditions"] = conds
+    st.session_state["editing_metrics"] = editing
+    # 清空多选
+    st.session_state[f"{batch_key}_vals"] = []
+
+
+
     st.session_state[conditions_key] = []
     st.session_state[result_key] = None
 
@@ -2247,6 +2526,44 @@ def render_metrics_editor_fragment():
 
             st.button("➕ 添加条件", key=f"add_numer_{i}",
                       on_click=_cb_add_numer_cond, args=(i,))
+
+            _clipboard = st.session_state.get("clipboard_condition")
+            if _clipboard:
+                _op_labels = {"==": "等于", "!=": "不等于", "contains": "包含",
+                              "not_contains": "不包含", "in": "属于", "not_in": "不属于",
+                              "is_empty": "为空", "is_not_empty": "不为空"}
+                _op_label = _op_labels.get(_clipboard.get("op", ""), _clipboard.get("op", ""))
+                _paste_label = f"📋 粘贴：{_clipboard.get('field','')} {_op_label} {_clipboard.get('value','')}"
+                st.button(_paste_label, key=f"paste_numer_{i}",
+                          on_click=_cb_paste_cond, args=(i,))
+
+            # 批量多选添加条件
+            _batch_key = f"batch_numer_{i}"
+            if st.checkbox("⊞ 批量添加条件（同一字段多个值）", key=f"show_batch_{i}"):
+                _all_cols = st.session_state.get("columns", [])
+                _field_dist = DataService(st.session_state["df"]).build_field_distribution()
+                _batch_field = st.selectbox(
+                    "字段", _all_cols,
+                    key=f"{_batch_key}_field"
+                )
+                _batch_op = st.selectbox(
+                    "运算符", ["contains", "not_contains", "==", "!=", "in", "not_in"],
+                    key=f"{_batch_key}_op"
+                )
+                _finfo = _field_dist.get(_batch_field, {})
+                _fopts = _finfo.get("options", _finfo.get("values", []))
+                _batch_vals = st.multiselect(
+                    "选择多个值（每个值生成一条独立条件）",
+                    options=_fopts,
+                    key=f"{_batch_key}_vals"
+                )
+                if _batch_vals:
+                    st.button(
+                        f"添加 {len(_batch_vals)} 条条件",
+                        key=f"{_batch_key}_btn",
+                        on_click=_cb_add_batch_numer_conds,
+                        args=(i, _batch_key)
+                    )
 
             metric["numerator_conditions"] = numer_conditions
 
@@ -2681,13 +2998,16 @@ if uploaded_file is not None:
                                 prompt = PARSE_METRIC_GSB_PROMPT.format(field_distribution=field_dist_str, metric_description=spec_content)
                             else:  # "线上评测" 和 "等级对比" 均使用标准 Excel 解析
                                 prompt = PARSE_METRIC_EXCEL_PROMPT.format(field_distribution=field_dist_str, excel_content=spec_content)
-                            response = llm.call_text(prompt, max_tokens=8192)
+                            response = llm.call_text(prompt, max_tokens=16384)
                             parsed_result = llm.parse_json_response(response)
                             parsed_result = auto_fix_operators(parsed_result, st.session_state["df"])
                             parsed_result, fix_log = auto_fix_values(parsed_result, st.session_state["df"])
                             parsed_result, level_fix_log = auto_fix_level_codes(parsed_result, st.session_state["df"], spec_content)
                             fix_log = fix_log + level_fix_log
                             parsed_result = migrate_or_conditions_to_flat(parsed_result)
+                            parsed_result = auto_fix_numerator_logic(parsed_result)
+                            parsed_result = auto_fix_deduplicate(parsed_result)
+                            parsed_result, field_warnings = auto_fix_invalid_fields(parsed_result, st.session_state["df"])
                             st.session_state["parsed_metrics"] = parsed_result
                             editing_copy = parsed_result.copy()
                             # 保存 AI 分析出的分母条件，供"AI分析的分母"选项使用
@@ -2712,6 +3032,8 @@ if uploaded_file is not None:
                             st.session_state["badcase_presets"] = presets_bad
                             st.session_state["goodcase_presets"] = presets_good
                             st.success("解析成功，已自动统计！")
+                            if field_warnings:
+                                st.warning("⚠️ 以下条件使用了数据中不存在的字段，已自动移除：\n" + "\n".join(f"- {w}" for w in field_warnings))
                             if fix_log:
                                 fix_lines = []
                                 for item in fix_log:

@@ -128,7 +128,7 @@ client = OpenAI(
 
 ### 运算符选择规则
 
-- `categorical_with_multi` 字段（多选逗号分隔）：只能用 `contains` / `not_contains`
+- `categorical_with_multi` 字段（多选）：`(L0+L1)` 用 `in "L0完整选项名,L1完整选项名"` 放 `numerator_conditions`；字段间 AND，`in` 内部 OR，等价于 COUNTIFS 逻辑
 - `categorical` 字段（固定值）：用 `==` / `!=` / `in` / `not_in`
 - "排除多个值"：用 `not_in`，value 填逗号分隔（如 `"C,D"`）
 

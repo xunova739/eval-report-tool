@@ -134,7 +134,7 @@ class LLMService:
         try:
             # 创建不使用代理的 httpx 客户端
             http_client = httpx.Client(
-                timeout=30.0,
+                timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
                 proxies=None,
                 trust_env=False
             )
@@ -373,8 +373,10 @@ class LLMService:
             elif ch == ']':
                 open_brackets -= 1
 
-        if open_braces == 0 and open_brackets == 0:
-            return None  # 括号已平衡但仍解析失败，不是截断问题
+        # 即使括号看起来平衡，JSON 也可能在字符串内部被截断（in_string 为 True）
+        # 统计结束时是否处于字符串内
+        if open_braces == 0 and open_brackets == 0 and not in_string:
+            return None  # 括号平衡且不在字符串内仍解析失败，非截断问题
 
         # 去掉末尾不完整的键值对
         trimmed = json_str.rstrip()
@@ -388,8 +390,8 @@ class LLMService:
             except json.JSONDecodeError:
                 continue
 
-        # 更激进的修复：逐字符从末尾回退
-        for i in range(min(200, len(trimmed))):
+        # 策略1：逐字符从末尾回退（最多退 2000 字符应对轻度截断）
+        for i in range(min(2000, len(trimmed))):
             candidate = trimmed[:len(trimmed) - i]
 
             # 重新计算括号
@@ -422,6 +424,64 @@ class LLMService:
             suffix = ']' * max(0, osb) + '}' * max(0, ob)
             try:
                 result = json.loads(candidate + suffix)
+                if isinstance(result, dict):
+                    return result
+            except json.JSONDecodeError:
+                continue
+
+        # 策略2：O(N) 扫描找自然截断点（depth=1时刚关闭了一个顶层子对象，如一条 metric）
+        # 适用于最后一条 metric 很长（超过 2000 字符）导致策略1回退不足的情况
+        valid_cut_positions = []
+        depth = 0
+        ins2, esc2 = False, False
+        for idx, ch in enumerate(trimmed):
+            if esc2:
+                esc2 = False
+                continue
+            if ch == '\\' and ins2:
+                esc2 = True
+                continue
+            if ch == '"':
+                ins2 = not ins2
+                continue
+            if ins2:
+                continue
+            if ch in ('{', '['):
+                depth += 1
+            elif ch in ('}', ']'):
+                depth -= 1
+                if depth == 1:
+                    # 刚关闭了一个嵌套对象/数组，是潜在的有效截断点
+                    valid_cut_positions.append(idx + 1)
+
+        # 从最后的有效截断点向前尝试（最多尝试 50 个）
+        for pos in reversed(valid_cut_positions[-50:]):
+            candidate = trimmed[:pos]
+            ob2, osb2 = 0, 0
+            ins3, esc3 = False, False
+            for ch in candidate:
+                if esc3:
+                    esc3 = False
+                    continue
+                if ch == '\\' and ins3:
+                    esc3 = True
+                    continue
+                if ch == '"':
+                    ins3 = not ins3
+                    continue
+                if ins3:
+                    continue
+                if ch == '{':
+                    ob2 += 1
+                elif ch == '}':
+                    ob2 -= 1
+                elif ch == '[':
+                    osb2 += 1
+                elif ch == ']':
+                    osb2 -= 1
+            suffix2 = ']' * max(0, osb2) + '}' * max(0, ob2)
+            try:
+                result = json.loads(candidate + suffix2)
                 if isinstance(result, dict):
                     return result
             except json.JSONDecodeError:

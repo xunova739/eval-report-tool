@@ -221,7 +221,14 @@ class DataService:
                                     all_options.extend([str(p).strip() for p in parsed if p])
                                     continue
                             except (json.JSONDecodeError, ValueError):
-                                pass  # 降级到逗号分隔
+                                pass  # 降级
+
+                            # 二级降级：正则提取引号内的字符串
+                            # 处理 ["值A"+,"值B"] 或 ["值A"+"值B"] 等非标准格式
+                            quoted = re.findall(r'"([^"]+)"', v_str)
+                            if quoted:
+                                all_options.extend([q.strip() for q in quoted if q.strip()])
+                                continue
 
                         # 降级：逗号/顿号拆分
                         parts = sep_pattern.split(v_str)
@@ -231,8 +238,13 @@ class DataService:
                     for opt in all_options:
                         option_counts[opt] = option_counts.get(opt, 0) + 1
 
+                    # 记录子类型：json_array 或 comma_separated
+                    # json_array 字段每个单元格是 ["选项A","选项B"] 格式
+                    # comma_separated 字段每个单元格是 "选项A，选项B" 格式
+                    subtype = "json_array" if has_json_array else "comma_separated"
                     result[col] = {
                         "type": "categorical_with_multi",
+                        "subtype": subtype,
                         "options": sorted(option_counts.keys()),
                         "option_counts": option_counts,
                         "note": "该字段含多选值，匹配时请用 contains"
@@ -335,20 +347,19 @@ class DataService:
         elif op == "in":
             values = [v.strip() for v in str(value).split(",")]
             str_col = col.astype(str)
-            exact_mask = str_col.isin(values)
-            contains_mask = pd.Series([False] * len(df), index=df.index)
+            # 格子里只要包含其中一个值就算（OR 逻辑）
+            # 等价于 Excel 里勾选多个筛选条件的行为
+            mask = pd.Series([False] * len(df), index=df.index)
             for v in values:
-                contains_mask = contains_mask | str_col.str.contains(v, case=False, na=False, regex=False)
-            mask = exact_mask | contains_mask
+                mask = mask | str_col.str.contains(v, case=False, na=False, regex=False)
 
         elif op == "not_in":
             values = [v.strip() for v in str(value).split(",")]
             str_col = col.astype(str)
-            exact_mask = str_col.isin(values)
-            contains_mask = pd.Series([False] * len(df), index=df.index)
+            # 格子里不能包含其中任何一个值
+            mask = pd.Series([True] * len(df), index=df.index)
             for v in values:
-                contains_mask = contains_mask | str_col.str.contains(v, case=False, na=False, regex=False)
-            mask = ~(exact_mask | contains_mask)
+                mask = mask & ~str_col.str.contains(v, case=False, na=False, regex=False)
 
         elif op == "greater_than":
             try:
