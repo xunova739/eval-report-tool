@@ -8,12 +8,60 @@ import re
 import difflib
 import hashlib
 import time
+import logging
+import traceback
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import io
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
+
+# ==================== 日志系统初始化 ====================
+# 将日志同时写入内存缓冲区，方便一键下载
+_log_buffer = io.StringIO()
+
+_logger = logging.getLogger("eval_report_tool")
+_logger.setLevel(logging.DEBUG)
+
+# 内存 handler（用于下载）
+_mem_handler = logging.StreamHandler(_log_buffer)
+_mem_handler.setLevel(logging.DEBUG)
+_mem_handler.setFormatter(logging.Formatter(
+    "[%(asctime)s] [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+))
+if not _logger.handlers:
+    _logger.addHandler(_mem_handler)
+
+def app_log(msg: str, level: str = "info", exc: Exception = None) -> None:
+    """记录应用日志（内存缓冲，可一键下载）"""
+    if level == "debug":
+        _logger.debug(msg)
+    elif level == "warning":
+        _logger.warning(msg)
+    elif level == "error":
+        if exc:
+            _logger.error(f"{msg}\n{traceback.format_exc()}")
+        else:
+            _logger.error(msg)
+    else:
+        _logger.info(msg)
+
+def get_log_text() -> str:
+    """获取完整日志文本"""
+    _log_buffer.seek(0)
+    content = _log_buffer.read()
+    # 加环境信息头部
+    import platform, sys
+    header = (
+        f"=== 评测报告工具 诊断日志 ===\n"
+        f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"操作系统: {platform.system()} {platform.release()}\n"
+        f"Python: {sys.version.split()[0]}\n"
+        f"{'='*40}\n\n"
+    )
+    return header + content
 
 # 读取 .env 文件（如果存在）
 _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -2372,8 +2420,8 @@ with st.sidebar:
                     else:
                         st.error(message)
                 except Exception as e:
+                    app_log(f"API连接测试失败: {str(e)}", level="error", exc=e)
                     st.error(format_api_error(e))
-        else:
             st.warning("请先填写API密钥和接口地址")
 
     col_save, col_del = st.columns(2)
@@ -2408,6 +2456,16 @@ with st.sidebar:
             st.cache_data.clear()
             st.cache_resource.clear()
             st.success("缓存已清除")
+
+    # 日志下载（出错时发给开发者排查）
+    st.download_button(
+        label="📋 下载诊断日志",
+        data=get_log_text(),
+        file_name=f"eval_tool_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        mime="text/plain",
+        use_container_width=True,
+        help="遇到问题时点击下载日志文件，发送给开发者排查"
+    )
 
     st.divider()
 
@@ -2970,6 +3028,7 @@ if uploaded_file is not None:
                         st.session_state["stats_error"] = None
                     except Exception as e:
                         import traceback
+                        app_log(f"统计计算失败: {str(e)}", level="error", exc=e)
                         st.session_state["stats_error"] = str(e)
                         st.session_state["stats_traceback"] = traceback.format_exc()
 
@@ -3171,23 +3230,67 @@ if uploaded_file is not None:
                         # 不刷新页面，直接继续渲染
 
                     except Exception as e:
+                        app_log(f"评测报告生成失败: {str(e)}", level="error", exc=e)
                         st.error(format_api_error(e))
-
-            # 报告编辑和导出
             if st.session_state.get("generated_report"):
                 st.markdown("---")
 
-                # 标题行 + 编辑开关
-                title_col, edit_col = st.columns([6, 1])
-                with title_col:
-                    st.markdown("**报告内容**" + ("（可编辑）" if st.session_state.get("report_edit_mode") else "（预览）"))
-                with edit_col:
+                # 标题独立一行
+                is_edit_mode = st.session_state.get("report_edit_mode", False)
+                st.markdown(
+                    f"<div style='font-weight:600; font-size:15px; color:#1F2937; margin-bottom:2px;'>报告内容（{'可编辑' if is_edit_mode else '预览'}）</div>",
+                    unsafe_allow_html=True
+                )
+
+                # 编辑开关（左）+ 复制按钮（右）同一行
+                report_text = st.session_state["generated_report"]
+                import json as _json
+                _escaped = _json.dumps(report_text, ensure_ascii=False)
+                toggle_col, copy_col = st.columns([8, 2])
+                with toggle_col:
                     is_edit_mode = st.toggle(
-                        "编辑",
+                        "编辑模式",
                         value=st.session_state.get("report_edit_mode", False),
                         key="report_edit_toggle"
                     )
                     st.session_state["report_edit_mode"] = is_edit_mode
+                with copy_col:
+                    copy_btn_html = f'''
+<div style="display:flex; justify-content:flex-end; align-items:center; height:38px;">
+  <button id="copy-btn" onclick="copyText()"
+    onmouseover="this.style.background='#E5E7EB'"
+    onmouseout="this.style.background='#F3F4F6'"
+    style="display:flex; align-items:center; gap:5px; background:#F3F4F6; color:#374151; border:1px solid #E5E7EB; border-radius:6px; padding:5px 12px; font-size:13px; font-weight:500; cursor:pointer; font-family:Inter,sans-serif; transition:background 0.15s ease; box-shadow:0 1px 3px rgba(0,0,0,0.08); white-space:nowrap;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
+    <span id="copy-label">复制</span>
+  </button>
+</div>
+<script>
+function copyText() {{
+  var text = {_escaped};
+  navigator.clipboard.writeText(text).then(function() {{
+    var b = document.getElementById('copy-btn');
+    var label = document.getElementById('copy-label');
+    label.innerText = '已复制 ✓';
+    b.style.color = '#059669';
+    b.style.borderColor = '#6EE7B7';
+    b.style.background = '#ECFDF5';
+    setTimeout(function() {{
+      label.innerText = '复制';
+      b.style.color = '#374151';
+      b.style.borderColor = '#E5E7EB';
+      b.style.background = '#F3F4F6';
+    }}, 2000);
+  }}).catch(function() {{
+    alert('复制失败，请手动复制');
+  }});
+}}
+</script>
+'''
+                    components.html(copy_btn_html, height=50)
 
                 with st.container(border=True):
                     if is_edit_mode:
@@ -3200,42 +3303,8 @@ if uploaded_file is not None:
                         )
                         st.session_state["generated_report"] = edited_report
                     else:
-                        # 报告预览 + 复制按钮
+                        # 报告预览
                         report_text = st.session_state["generated_report"]
-                        import json as _json
-                        _escaped = _json.dumps(report_text, ensure_ascii=False)
-                        copy_btn_html = f'''
-<div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
-  <button id="copy-btn" onmouseover="this.style.background='#374151'" onmouseout="this.style.background=this.innerText.includes('已复制')?'#10B981':'#1F2937'" onclick="copyText()" style="display:flex; align-items:center; justify-content:center; gap:6px; background:#1F2937; color:white; border:none; border-radius:6px; padding:6px 12px; font-size:13px; font-weight:500; cursor:pointer; font-family:Inter,sans-serif; transition:all 0.15s ease; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-    </svg>
-    <span>复制</span>
-  </button>
-</div>
-<script>
-function copyText() {{
-  var text = {_escaped};
-  navigator.clipboard.writeText(text).then(function() {{
-    var b = document.getElementById('copy-btn');
-    var span = b.querySelector('span');
-    var svg = b.querySelector('svg');
-    span.innerText = '已复制';
-    b.style.background = '#10B981';
-    svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
-    setTimeout(function() {{
-      span.innerText = '复制';
-      b.style.background = '#1F2937';
-      svg.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>';
-    }}, 2000);
-  }}).catch(function(err) {{
-    alert('复制失败，请手动复制');
-  }});
-}}
-</script>
-'''
-                        components.html(copy_btn_html, height=45)
                         st.markdown(report_text)
 
                 col1, col2 = st.columns(2)
@@ -3354,7 +3423,7 @@ function copyText() {{
 
                 # Case 数据单独导出
                 if (saved_badcase is not None and not saved_badcase.empty) or (saved_goodcase is not None and not saved_goodcase.empty):
-                    st.markdown("**Case 数据导出**")
+                    st.markdown("<div style='margin-top: 12px; font-weight: 600; font-size: 14px; color: #374151;'>Case 数据导出</div>", unsafe_allow_html=True)
                     case_col1, case_col2 = st.columns(2)
 
                     with case_col1:
@@ -3363,7 +3432,7 @@ function copyText() {{
                             saved_badcase.to_excel(badcase_buffer, index=False, engine='openpyxl')
                             badcase_buffer.seek(0)
                             st.download_button(
-                                label=f"❌ Bad Case ({len(saved_badcase)}条)",
+                                label=f"❌ 导出 Bad Case ({len(saved_badcase)}条)",
                                 data=badcase_buffer,
                                 file_name=f"BadCase_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3377,7 +3446,7 @@ function copyText() {{
                             saved_goodcase.to_excel(goodcase_buffer, index=False, engine='openpyxl')
                             goodcase_buffer.seek(0)
                             st.download_button(
-                                label=f"✅ Good Case ({len(saved_goodcase)}条)",
+                                label=f"✅ 导出 Good Case ({len(saved_goodcase)}条)",
                                 data=goodcase_buffer,
                                 file_name=f"GoodCase_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3389,6 +3458,7 @@ function copyText() {{
                 st.caption("提示：在 Case 筛选中点击「保存结果」后可在此一键导出")
 
     except Exception as e:
+        app_log(f"文件读取失败: {str(e)}", level="error", exc=e)
         st.error(f"文件读取失败: {str(e)}")
         with st.expander("查看错误详情"):
             st.exception(e)
