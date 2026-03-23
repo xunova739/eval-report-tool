@@ -1724,6 +1724,58 @@ def render_condition_editor(df, condition_list: list, prefix: str, columns: list
     i = 0
     while i < len(condition_list):
         condition = condition_list[i]
+
+        # 检测是否为 OR 组
+        if isinstance(condition, dict) and condition.get("type") == "or_group":
+            # 渲染 OR 组
+            or_conditions = condition.get("conditions", [])
+            with st.container():
+                st.markdown("""
+                <div style='background: #F0F9FF; border-left: 3px solid #3B82F6; padding: 8px 12px; margin: 8px 0; border-radius: 4px;'>
+                    <div style='font-size: 13px; font-weight: 600; color: #1E40AF;'>⊕ OR 组（组内任一满足）</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                for j, or_cond in enumerate(or_conditions):
+                    col1, col2, col3, col_del = st.columns([3, 2, 3, 0.4])
+
+                    with col_del:
+                        if conditions_key:
+                            st.button(
+                                "×",
+                                key=f"{key_prefix}_or_del_{i}_{j}",
+                                help=f"删除此 OR 组条件",
+                                type="secondary",
+                                on_click=lambda lst, idx: lst.pop(idx),
+                                args=(or_conditions, j)
+                            )
+
+                    with col1:
+                        st.text(or_cond.get("field", ""), help="OR 组条件字段")
+
+                    with col2:
+                        st.text(or_cond.get("op", ""), help="OR 组条件运算符")
+
+                    with col3:
+                        st.text(str(or_cond.get("value", "")), help="OR 组条件值")
+
+                # OR 组整体删除按钮
+                col_del_group = st.columns([8, 0.4])[1]
+                with col_del_group:
+                    if conditions_key:
+                        st.button(
+                            "删除整个 OR 组",
+                            key=f"{key_prefix}_del_or_group_{i}",
+                            help="删除此 OR 组",
+                            type="secondary",
+                            on_click=lambda lst, idx: lst.pop(idx),
+                            args=(condition_list, i)
+                        )
+
+            i += 1
+            continue
+
+        # 普通条件的渲染
         with st.container():
             col1, col2, col3, col_del, col_copy = st.columns([3, 2, 3, 0.4, 0.4])
             with col_copy:
@@ -2348,6 +2400,28 @@ def _cb_add_batch_numer_conds(metric_idx: int, batch_key: str):
     st.session_state[f"{batch_key}_vals"] = []
 
 
+def _cb_add_or_group(metric_idx: int, or_key: str):
+    """添加 OR 组条件"""
+    field = st.session_state.get(f"{or_key}_field", "")
+    vals = st.session_state.get(f"{or_key}_vals", [])
+    if not field or not vals:
+        return
+    editing = st.session_state.get("editing_metrics", {})
+    metrics = editing.get("metrics", [])
+    if metric_idx < len(metrics):
+        conds = metrics[metric_idx].get("numerator_conditions", [])
+        # 生成 OR 组结构
+        or_group = {
+            "type": "or_group",
+            "conditions": [{"field": field, "op": "contains", "value": v} for v in vals]
+        }
+        conds.append(or_group)
+        metrics[metric_idx]["numerator_conditions"] = conds
+    st.session_state["editing_metrics"] = editing
+    # 清空多选
+    st.session_state[f"{or_key}_vals"] = []
+
+
 
     st.session_state[conditions_key] = []
     st.session_state[result_key] = None
@@ -2563,6 +2637,30 @@ def render_metrics_editor_fragment():
                         key=f"{_batch_key}_btn",
                         on_click=_cb_add_batch_numer_conds,
                         args=(i, _batch_key)
+                    )
+
+            # 添加 OR 组条件
+            _or_key = f"or_group_{i}"
+            if st.checkbox("⊕ 添加 OR 组（同一字段多个值，组内 OR）", key=f"show_or_{i}"):
+                _all_cols = st.session_state.get("columns", [])
+                _field_dist = DataService(st.session_state["df"]).build_field_distribution()
+                _or_field = st.selectbox(
+                    "字段", _all_cols,
+                    key=f"{_or_key}_field"
+                )
+                _finfo = _field_dist.get(_or_field, {})
+                _fopts = _finfo.get("options", _finfo.get("values", []))
+                _or_vals = st.multiselect(
+                    "选择多个值（生成一个 OR 组，组内任一满足即可）",
+                    options=_fopts,
+                    key=f"{_or_key}_vals"
+                )
+                if _or_vals:
+                    st.button(
+                        f"添加 OR 组（包含 {len(_or_vals)} 个值）",
+                        key=f"{_or_key}_btn",
+                        on_click=_cb_add_or_group,
+                        args=(i, _or_key)
                     )
 
             metric["numerator_conditions"] = numer_conditions
