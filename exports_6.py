@@ -446,6 +446,24 @@ class ExportService:
             pd.DataFrame: 格式化后的表格
         """
         is_comparison = "version_a" in stats_result
+        is_grouping = "group_results" in stats_result or "groups" in stats_result
+
+        # 分组模式
+        if is_grouping:
+            rows = []
+            group_results = stats_result.get("group_results", [])
+            for gr in group_results:
+                group_name = gr.get("group_name", gr.get("group_value", ""))
+                for r in gr.get("results", []):
+                    pct = r.get("percentage")
+                    rows.append({
+                        "分组": group_name,
+                        "指标名称": r.get("name", ""),
+                        "分子": r.get("numerator", 0),
+                        "分母": r.get("denominator", 0),
+                        "百分比": f"{pct}%" if pct is not None else "N/A"
+                    })
+            return pd.DataFrame(rows)
 
         if is_comparison:
             rows = []

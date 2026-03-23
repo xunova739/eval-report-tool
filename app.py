@@ -3329,9 +3329,15 @@ function copyText() {{
                         st.error(f"生成失败: {str(e)}")
 
                 with col2:
-                    # 导出统计表 Excel
+                    # 导出统计表 Excel（使用与 UI 显示相同的函数，确保数据一致）
                     try:
-                        stats_df = ExportService()._format_stats_for_excel(stats_result)
+                        spec_descriptions = st.session_state.get("spec_descriptions", {})
+                        if spec_descriptions:
+                            # 有口径描述时，使用与 UI 显示相同的函数
+                            stats_df = build_stats_table_from_spec(stats_result, spec_descriptions, is_grouping, stats_result)
+                        else:
+                            # 没有口径描述时，使用原来的方法
+                            stats_df = ExportService()._format_stats_for_excel(stats_result)
                         excel_buffer = io.BytesIO()
                         stats_df.to_excel(excel_buffer, index=False, engine='openpyxl')
                         excel_buffer.seek(0)
