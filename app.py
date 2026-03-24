@@ -1147,6 +1147,62 @@ def auto_fix_level_codes(parsed_config, df, spec_text):
     return parsed_config, fix_log
 
 
+def auto_fix_from_field_mappings(parsed_config: dict) -> dict:
+    """用 field_mappings 里已正确分析的 value 覆盖 metrics 条件里的错误值
+
+    场景：AI 在 field_mappings 里正确写出 not_contains "L2"，
+    但在填写 metrics 时却写成了 not_contains "L0上装还原问题"。
+    本函数对每个条件，在 field_mappings 中找同字段、同方向（正向/负向）的映射，
+    若只有唯一一个高置信度映射，则用其 value 覆盖条件里的 value。
+    """
+    mappings = parsed_config.get("field_mappings", [])
+    if not mappings:
+        return parsed_config
+
+    def op_dir(op: str) -> str:
+        """返回运算符方向：pos=正向匹配，neg=负向匹配"""
+        if op in ("contains", "==", "in", "is_not_empty"):
+            return "pos"
+        if op in ("not_contains", "!=", "not_in", "is_empty"):
+            return "neg"
+        return "other"
+
+    # 建立 (field, direction) → [value] 索引，只取置信度 >= 90 的映射
+    from collections import defaultdict
+    field_dir_values: dict = defaultdict(lambda: defaultdict(list))
+    for m in mappings:
+        if m.get("confidence", 0) < 90:
+            continue
+        f = m.get("field", "")
+        op = m.get("operator", "")
+        v = str(m.get("value", ""))
+        if f and op and v:
+            field_dir_values[f][op_dir(op)].append(v)
+
+    def fix_cond(cond: dict) -> None:
+        field = cond.get("field", "")
+        op = cond.get("op", "")
+        val = str(cond.get("value", ""))
+        direction = op_dir(op)
+        if direction == "other":
+            return
+        candidates = list(set(field_dir_values.get(field, {}).get(direction, [])))
+        # 只有唯一候选且与当前值不同时才覆盖
+        if len(candidates) == 1 and val != candidates[0]:
+            cond["value"] = candidates[0]
+
+    for metric in parsed_config.get("metrics", []):
+        for cond in metric.get("numerator_conditions", []):
+            fix_cond(cond)
+        for group in metric.get("numerator_or_conditions", []):
+            for cond in group:
+                fix_cond(cond)
+        for cond in metric.get("custom_denominator_conditions", []):
+            fix_cond(cond)
+
+    return parsed_config
+
+
 def migrate_or_conditions_to_flat(parsed_config: dict) -> dict:
     """将 numerator_or_conditions 迁移到 numerator_conditions 的平铺格式
 
@@ -2999,6 +3055,7 @@ if uploaded_file is not None:
                             parsed_result, fix_log = auto_fix_values(parsed_result, st.session_state["df"])
                             parsed_result, level_fix_log = auto_fix_level_codes(parsed_result, st.session_state["df"], spec_content)
                             fix_log = fix_log + level_fix_log
+                            parsed_result = auto_fix_from_field_mappings(parsed_result)
                             parsed_result = migrate_or_conditions_to_flat(parsed_result)
                             parsed_result = auto_fix_numerator_logic(parsed_result)
                             parsed_result = auto_fix_deduplicate(parsed_result)

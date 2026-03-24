@@ -91,73 +91,64 @@ _PARSE_COMMON_RULES = """
 - value 应该填 `"L2"` 或 `"L2-身型不还原"`，而不是 `"[\"L2-身型不还原\","` 这种 JSON 残片
 
 【括号多值写法识别 - 极其重要】
-口径描述中，括号内用"+"连接多个值，表示该字段的值满足其中任意一个即可（OR 逻辑）：
+口径描述中，括号内用"+"连接多个值，表示该字段允许这些值（OR 逻辑）。
 
-常见形式一：**字段值是数字或等级代码**
-- `服装还原问题（0+1）` → 服装还原问题字段的值是 0 或 1 → 用 `in`，value="0,1"
-- `穿着效果（0）` → 穿着效果字段的值是 0 → 用 `==`，value="0"
-- `服装真实度（高+中）` → 服装真实度字段值是 高 或 中 → 用 `in`，value="高,中"
-- `极端（无问题）` → 极端字段值是 无问题 → 用 `==`，value="无问题"
-- `L3肢体异常（否）` → L3肢体异常字段值是 否 → 用 `==`，value="否"
-
-**数字 0/1/2/3 与等级标签的对应规则（极其重要）**
-括号内的数字是等级的**序号**，不是字面值，必须先查字段分布确认实际标签：
+**数字 0/1/2/3 是等级序号，不是字面值（极其重要）**
+括号内的数字是等级的**序号**，必须先查字段分布确认实际标签：
 - **第一步**：到字段分布的 values/options 中，找该字段实际存在的等级值列表
 - **第二步**：按顺序对应：0 → 最低/最好的那个值，1 → 第二个，依此类推
 - **第三步**：以字段分布里的实际标签作为条件 value，不要自己造标签格式
 - 字段分布里可能是 "L0xxx"、也可能是 "无问题"、"轻微"、"1分" 等任何形式——以实际值为准
 - 如果字段的 values 就是纯数字 "0"/"1"/"2"，则直接用数字作为 value
 
-**通过率场景中的括号标签处理**
+**categorical 字段（单值字段）**的括号多值：
+- 多个值用 `in`，单个值用 `==`
+- 示例：`服装真实度（高+中）` → `{{"field":"服装真实度","op":"in","value":"高,中"}}`
+- 示例：`穿着效果（0）` → 先查字段分布确认0对应实际标签，再 `== "L0穿着问题"`
+- 示例：`L3肢体异常（否）` → `{{"field":"L3肢体异常","op":"==","value":"否"}}`
 
-**【核心原则】口径写什么，就生成什么条件**
+**categorical_with_multi 字段（多选字段）**的括号多值（极其重要）：
+categorical_with_multi 字段只能用 contains / not_contains，绝对禁止用 in/==。
+括号内多个值的处理方式取决于字段中是否有更高级别：
 
-**categorical_with_multi 多选字段**的 `(L0+L1)` 通过场景：
-- 用 `in` 运算符，括号里写哪些值就包含哪些
-- 口径说"允许L0+L1" → `in "L0完整选项名,L1完整选项名"`
-- 口径说"允许L0+L1+L2" → `in "L0,L1,L2"`
+- **情况1：括号内是较低级别（如L0+L1），字段中存在更高级别（如L2）**
+  → 用 `not_contains "L2"` 排除高级别（一条条件，用等级前缀）
+  → 原因：单元格可能同时包含L2和L1（如"L2上装还原问题，L1上装还原问题"），
+    用 contains L1 会误匹配，而 not_contains L2 可精确排除，结果与Excel COUNTIFS一致
 
-**示例：口径"服装还原问题(L0+L1)"**
-- 字段选项：L0上装还原问题, L1上装还原问题, L2上装还原问题
-- ✅ 正确写法：`{{"field":"上装服装问题","op":"in","value":"L0上装还原问题,L1上装还原问题"}}`
+  ✅ `服装还原问题（L0+L1）`，字段有L2 → `{{"field":"上装服装问题","op":"not_contains","value":"L2"}}`
+  ✅ `肢体问题（L0+L1+L2）`，字段有L3 → `{{"field":"肢体问题","op":"not_contains","value":"L3"}}`
 
-**categorical 单值字段**的 `(L0+L1)` 通过场景：
-- 同样用 `in "L0实际值,L1实际值"` 放 numerator_conditions
+- **情况2：括号内的值已是字段全部的"允许"选项，无更高级别需排除**
+  → 用 `numerator_or_conditions`，每个值单独一组
 
-**特殊情况：如果要"排除L2"，用 not_contains**
-- 口径明确说"不允许L2"或"排除L2" → 用 `not_contains "L2xxx"`
-- 口径只写允许的值（L0+L1）→ 用 `in "L0,L1"`
-
-**加号分隔的多条件公式（整体通过率场景 - 极其重要）**
-
+  ✅ `整体问题（没有任何问题+L1）`，字段只有[没有任何问题, L1-xxx] →
+  numerator_or_conditions: [[contains "没有任何问题"], [contains "L1"]]
 
 **加号分隔的多条件公式（整体通过率场景 - 极其重要）**
 口径中出现 `字段A（值）+字段B（值）+字段C（值1+值2）+...` 的连加公式时：
-- 每个 `字段（值）` 是一个独立的 AND 条件
+- 每个 `字段（值）` 是一个独立的 AND 条件，全部放入 numerator_conditions
 - **必须解析公式中所有的 `+` 分隔项，不能遗漏**，即使有 8 个、10 个条件也要全部输出
-- 每项独立生成一条 `numerator_conditions` 条目
 
-示例（逻辑结构说明，实际 value 必须查字段分布）：`试衣图（是）+是否存在肢体异常（否）+服装还原问题（0+1）+穿着效果（0）+服装真实度（高+中）`
-→ 5 个条件全部进 numerator_conditions：
-  - `试衣图对应字段 == [是的实际值]`
-  - `肢体异常对应字段 == [否的实际值]`
-  - `服装还原问题对应字段 in [0级实际标签,1级实际标签]`（查字段分布）
-  - `穿着效果对应字段 == [0级实际标签]`（查字段分布）
-  - `服装真实度对应字段 in "高,中"`（直接是字符串值则原样用）
+示例：`试衣图（是）+是否存在肢体异常（否）+服装还原问题（L0+L1）+穿着效果（L0）+服装真实度（高+中）`
+分析各字段类型后生成条件：
+- `试衣图` 是 categorical → `== "是"（查字段分布确认实际值）`
+- `肢体异常` 是 categorical → `== "否"（查字段分布确认实际值）`
+- `服装还原问题` 是 categorical_with_multi，有L2 → `not_contains "L2"` (每个相关子字段各一条)
+- `穿着效果` 是 categorical → `== "L0对应实际标签"（查字段分布）`
+- `服装真实度` 是 categorical → `in "高,中"`
 
-常见形式二：**括号内是叶子类目/子类名称**
-- `（上装+下装+连衣裙）款式细节不还原` → 叶子类目 in [上装, 下装, 连衣裙] AND 款式细节不还原
-- 括号内是类目名，逻辑：先过滤类目，再过滤问题条件
+常见形式：**括号内是叶子类目/子类名称**
+- `（上装+下装+连衣裙）款式细节不还原` → 先过滤类目 in [上装, 下装, 连衣裙]，再过滤问题条件
 
 操作步骤：
 1. 识别括号前的字段名（如"服装还原问题"、"服装真实度"）
-2. 到字段分布中找对应字段
-3. 括号内每个值，到字段的 values 或 options 中找精确匹配
-4. 如果是多个值，用 `in` 运算符，value 填逗号分隔（categorical_with_multi 字段改用多条 contains 组合）
-5. 如果是单个值，用 `==` 运算符
+2. 到字段分布中找对应字段，**先确认字段类型**（categorical 还是 categorical_with_multi）
+3. categorical 字段：多个值用 `in`，单个值用 `==`
+4. categorical_with_multi 字段：有更高级别 → `not_contains 高级别前缀`；无更高级别 → `numerator_or_conditions`
 
-❌ 错误：将 `服装还原问题（0+1）` 理解为注释说明而忽略括号内容
-✅ 正确：将括号内容解析为字段值过滤条件
+❌ 错误：categorical_with_multi 字段用 `in` 运算符（如 `in "L0上装还原问题,L1上装还原问题"`）
+✅ 正确：categorical_with_multi 字段有L2时，写 `not_contains "L2"`
 
 【分母理解规则】
 - 口径中出现"全部数据"、"所有记录"、"总数"、"汇总"、"评测总数"等描述时，分母 conditions 必须为空数组 []
@@ -225,22 +216,36 @@ _PARSE_COMMON_RULES = """
 - 例：排除某选项 → {{"field":"问题字段","op":"not_contains","value":"无问题"}}
 
 【等级代码精确匹配 - 极其重要】
-口径中出现的等级编号（L0、L1、L2、L3 等）必须与条件 value 中的等级编号完全一致：
-- "无 L3 问题" → not_contains 的 value 必须包含 "L3"，绝对不能写成 L0/L1/L2
-- "出现 L2 问题" → contains 的 value 必须包含 "L2"，绝对不能写成 L0/L1/L3
-- 不同等级代表不同严重程度，混用会导致统计结果完全错误
+口径中出现的等级编号（L0、L1、L2、L3 等）**必须**与条件 value 中的等级编号完全一致。
+这是最基本的规则，违反后统计结果完全错误！
+
+**核心原则：口径里写L几，条件value里就必须是L几**
+- "出现 L2 问题" → contains 的 value 包含 "L2"（绝对不能写L0/L1/L3！）
+- "无 L2 问题" / "排除 L2" → not_contains 的 value 包含 "L2"（绝对不能写L0/L1/L3！）
+- "出现 L3 问题" → contains 的 value 包含 "L3"
+- "排除 L3" / "无 L3" → not_contains 的 value 包含 "L3"
+
+**直接等级描述 vs 括号等级描述（必须区分）**：
+- 口径直接说"服装出现L2问题" → `contains "L2"` ← 直接取口径里的等级编号
+- 口径直接说"服装无L2问题" → `not_contains "L2"` ← 直接取口径里的等级编号
+- 口径用括号"(L0+L1)"表示允许的级别 → `not_contains "L2"`（排除更高一级）
+- 两条路径结果一样，但起点不同——无论哪条路，最终value里的等级必须对应口径语义
 
 操作步骤（必须按顺序）：
-第一步：从口径描述中提取准确的等级编号。例如"L3 为肢体异常" → 提取到 L3
-第二步：到字段分布的 values/options 中，找包含该编号的选项。例如在"肢体问题分类"的 options 中找含"L3"的项
-第三步：将该选项原文作为 value。例如找到"L3 肢体问题" → value="L3 肢体问题"
+第一步：从口径描述中提取准确的等级编号。例如"服装出现L2问题" → 提取到 L2
+第二步：到字段分布的 values/options 中，找包含该编号的选项。例如找到"L2上装还原问题"
+第三步：contains/not_contains 时，value 用 "L2" 前缀（覆盖所有L2子项），不要拼完整选项名
 
-❌ 错误（常见陷阱，绝对禁止）：
-口径描述"L3 为肢体异常" → 生成 {{"op": "contains", "value": "L0 肢体问题"}}
-原因：把 L3 误识别/误替换成了 L0，这是完全错误的！
+❌ 错误（最常见陷阱，绝对禁止）：
+- 口径说"服装出现L2问题" → 生成 `{{"op": "contains", "value": "L0上装还原问题"}}` ← L2被替换成L0！
+- 口径说"服装无L2问题" → 生成 `{{"op": "not_contains", "value": "L0上装还原问题"}}` ← 同样的错误！
 
 ✅ 正确：
-口径描述"L3 为肢体异常" → 从字段分布找到"L3 肢体问题" → 生成 {{"op": "contains", "value": "L3 肢体问题"}}
+- 口径说"服装出现L2问题" → `{{"op": "contains", "value": "L2"}}` ← value包含L2
+- 口径说"服装无L2问题" → `{{"op": "not_contains", "value": "L2"}}` ← value包含L2
+
+**生成完所有条件后必须自查**：
+逐条检查 numerator_conditions 和 numerator_or_conditions，确认每个条件 value 中的等级编号与对应口径描述完全一致。发现不一致立即修正。
 
 【分组维度识别】
 - 口径中如果有多层表头（如"手指状态/手持物"），前者是分组字段名，后者是具体值
@@ -263,35 +268,52 @@ _PARSE_COMMON_RULES = """
   ]
 
 【OR 条件的正确写法 - 极其重要】
-当口径描述"满足任意一个条件即为异常"（OR 逻辑）时，必须用 numerator_or_conditions：
+当口径描述"满足任意一个条件即为异常/成立"（OR 逻辑）时，必须用 numerator_or_conditions。
 
-❌ 错误写法（所有条件放 numerator_conditions，然后 numerator_logic 填 "or"）：
+⛔ 系统级警告：`numerator_conditions + numerator_logic:"or"` 这个组合在系统里**无效**！
+系统只识别 numerator_or_conditions 来做 OR 运算。把OR条件放在 numerator_conditions 里，
+无论 numerator_logic 填什么，系统都会按 AND 执行，结果完全错误！
+
+❌ 错误写法（条件在 numerator_conditions，logic 填 or —— 系统无效，实际执行 AND）：
 {{
   "numerator_conditions": [
     {{"field": "是否生成", "op": "==", "value": "否"}},
-    {{"field": "肢体问题分类", "op": "contains", "value": "L3肢体问题"}},
-    {{"field": "上装服装问题", "op": "contains", "value": "L2上装还原问题"}}
+    {{"field": "上装服装问题", "op": "contains", "value": "L2"}},
+    {{"field": "下装服装问题", "op": "contains", "value": "L2"}}
   ],
   "numerator_or_conditions": [],
-  "numerator_logic": "or"  // 这是错误用法！
+  "numerator_logic": "or"  // 无效！conditions 在 numerator_conditions 里，or 不生效
 }}
 
-✅ 正确写法（每个条件单独一组，放入 numerator_or_conditions）：
+✅ 正确写法（典型整体异常率场景，每个条件单独一组放入 numerator_or_conditions）：
 {{
   "numerator_conditions": [],
   "numerator_or_conditions": [
     [{{"field": "是否生成", "op": "==", "value": "否"}}],
-    [{{"field": "肢体问题分类", "op": "contains", "value": "L3肢体问题"}}],
-    [{{"field": "上装服装问题", "op": "contains", "value": "L2上装还原问题"}}]
+    [{{"field": "是否出现l3肢体异常问题", "op": "==", "value": "是"}}],
+    [{{"field": "上装服装问题", "op": "contains", "value": "L2"}}],
+    [{{"field": "下装服装问题", "op": "contains", "value": "L2"}}],
+    [{{"field": "试衣图服装穿着效果", "op": "==", "value": "L2穿着问题"}}]
   ],
   "numerator_logic": "or"
 }}
-说明：每组内部是 AND（可以有多个条件），组间是 OR。
+说明：numerator_or_conditions 是二维数组，每个子数组是一组（组内 AND），组间 OR。
 """
 
 # [PROMPT-002] 口径解析输出 Schema
 # 定义 AI 解析后必须遵循的 JSON 输出格式
 _PARSE_OUTPUT_SCHEMA = """
+【两步走流程 - 必须按此顺序】
+
+第一步（先做分析）：在脑中或草稿中，对每个出现的字段条件做映射分析：
+- 确认字段名（查字段分布，语义匹配）
+- 确认字段类型（categorical 还是 categorical_with_multi）
+- 确认运算符（categorical_with_multi 只能用 contains/not_contains）
+- 确认 value（口径写L几，value 里就是L几，不能用其他等级代替）
+
+第二步（再填 JSON）：先填 field_mappings（把第一步的分析结果写入），
+再填 metrics（直接从 field_mappings 中复制对应的 field/op/value，不要重新推断）
+
 【输出要求】
 严格输出以下 JSON 格式，不要输出其他内容：
 {{
@@ -300,23 +322,6 @@ _PARSE_OUTPUT_SCHEMA = """
     "type": "all",
     "conditions": []
   }},
-  "metrics": [
-    {{
-      "name": "指标名称",
-      "numerator_conditions": [
-        {{"field": "字段名", "op": "运算符", "value": "值"}},
-        // OR 组结构示例（用于 categorical_with_multi 字段的多值场景）：
-        {{"type": "or_group", "conditions": [
-          {{"field": "字段名", "op": "contains", "value": "值1"}},
-          {{"field": "字段名", "op": "contains", "value": "值2"}}
-        ]}}
-      ],
-      "numerator_or_conditions": [],
-      "numerator_logic": "and",
-      "denominator_type": "common",
-      "custom_denominator_conditions": []
-    }}
-  ],
   "field_mappings": [
     {{
       "description": "口径中的原始描述",
@@ -326,20 +331,28 @@ _PARSE_OUTPUT_SCHEMA = """
       "confidence": 95
     }}
   ],
+  "metrics": [
+    {{
+      "name": "指标名称",
+      "numerator_conditions": [
+        {{"field": "字段名（必须与field_mappings中的field完全一致）", "op": "运算符（必须与field_mappings中的operator完全一致）", "value": "值（必须与field_mappings中的value完全一致）"}}
+      ],
+      "numerator_or_conditions": [],
+      "numerator_logic": "and",
+      "denominator_type": "common",
+      "custom_denominator_conditions": []
+    }}
+  ],
   "group_dimensions": [
     {{"field": "数据中的实际字段名", "values": ["值 1", "值 2"]}}
   ]
 }}
 
 说明：
-- common_denominator.type：分母类型，"all"表示全部数据（conditions 留空），"custom"表示有过滤条件（conditions 非空）
-- numerator_conditions：条件列表，支持两种类型：
-  1. 普通条件：{{"field":"字段名","op":"运算符","value":"值"}} —— 所有普通条件之间是 AND 关系
-  2. OR组条件：{{"type":"or_group","conditions":[条件1, 条件2, ...]}} —— 组内是 OR 关系，和其他条件是 AND 关系
-     - 用于表达"字段内部OR，字段之间AND"的组合逻辑
-     - 例：上装服装问题是L0或L1（字段内OR），同时下装服装问题也是L0或L1（字段内OR），这两个OR组之间是AND
-- numerator_or_conditions：OR 条件组列表（旧格式，不推荐使用）
-- numerator_logic：使用 numerator_conditions（包含OR组）时，填 "and"
+- 填写 metrics 时，numerator_conditions 和 numerator_or_conditions 中的 field/op/value 必须与上方 field_mappings 中对应条目保持完全一致
+- numerator_conditions：AND 条件列表，所有条件同时满足
+- numerator_or_conditions：OR 条件组列表，每组内部 AND，组间 OR
+- numerator_logic：只使用 numerator_conditions → "and"；使用了 numerator_or_conditions（非空）→ "or"
 
 confidence 评分规则：
 - 95-100：字段名完全匹配，值也完全匹配
